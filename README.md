@@ -4,6 +4,13 @@
 
 Configures a chroot jail specifically for the purpose of limiting a set of SSH users to the jail. Useful if you have a server where you need to allow very limited access to a very limited amount of functionality.
 
+
+## Cytadel changes
+
+- fix broken SSH configuration
+- manage SSH authorized keys for jailed users
+- add option to remount bind a directory in the jail
+
 ## Requirements
 
 Requires OpenSSH server. Doesn't require `geerlingguy.security`, but that role (or one like it) is highly recommended to help lock down your server as much as possible.
