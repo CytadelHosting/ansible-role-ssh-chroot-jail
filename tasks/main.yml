@@ -44,6 +44,13 @@
     name: "{{ ssh_chroot_jail_group_name }}"
     state: present
 
+- name: Ensure SSHD config contains correct SFTP configuration
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: 'Subsystem\s+sftp'
+    line: 'Subsystem sftp internal-sftp -u 002'
+  notify: restart ssh daemon
+
 - name: Ensure SSHD config contains jail configuration.
   blockinfile:
     path: /etc/ssh/sshd_config
