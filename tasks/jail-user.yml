@@ -10,6 +10,27 @@
     createhome: "{{ item.createhome | default(omit) }}"
   register: user_task
 
+
+
+- name: Add authorized SSH public keys to jailed user .ssh/authorized_keys
+  debug:
+    var: user_task
+
+- debug:
+    var: item
+
+# add several SSH public keys to jailed user
+- name: Add authorized SSH public keys to jailed user .ssh/authorized_keys
+  authorized_key:
+    user: "{{ item.name }}"
+    key: "{{ lookup('file', pubkey_file) }}"
+  loop: "{{ item.authorized_keys }}"
+  loop_control:
+    loop_var: pubkey_file
+  when:
+    - user_task.state == 'present'
+    - item.authorized_keys is defined
+
 - name: Ensure jailed user has a homedir inside the jail (if configured).
   file:
     path: "{{ ssh_chroot_jail_path }}{{ item.home }}"
