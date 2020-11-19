@@ -29,3 +29,16 @@
   when:
     - item.home is defined
     - user_task.changed
+
+- name: Remount bind dirs in the jail
+  mount:
+    path: "{{ ssh_chroot_jail_path }}{{ bind.mount_point | default(bind.src_dir) }}"
+    src: "{{ bind.src_dir }}"
+    fstype: 'none'
+    opts: "defaults,bind,{{ 'rw' if (bind.rw is defined and bind.rw) else 'ro' }}"
+    state: "{{ bind.state | default ('mounted') }}"
+  loop: "{{ item.bind_remounts }}"
+  loop_control:
+    loop_var: bind
+  when:
+    - item.bind_remounts is defined

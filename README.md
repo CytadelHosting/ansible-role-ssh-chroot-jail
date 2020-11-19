@@ -116,7 +116,11 @@ None.
       - name: janedoe
         home: /home/janedoe
         shell: /bin/bash
-
+        bind_remounts:
+          - src_dir: '/srv/www/vhosts/covalab_mag2/shared/pub/media/'
+            mount_point: '/home/cvlb_lib_upload853/covalab_mag2_media/'  # optional, defaults to {{ ssh_chroot_jail_path }}{{ item.src_dir }}
+            rw: {yes|no}  # optional, default no
+            state: {present|absent|mounted|unmounted}  # optional, default mounted
 ## License
 
 MIT (Expat) / BSD
