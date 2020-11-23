@@ -3,7 +3,7 @@
   user:
     name: "{{ item.name }}"
     password: "{{ item.password | default(omit) }}"
-    groups: "{{ item.groups | default(omit) }}"
+    groups: "{{ item.groups | default(ssh_chroot_jail_group_name) }}"
     append: true
     shell: "{{ item.shell | default(omit) }}"
     home: "{{ item.home | default(omit) }}"
@@ -28,8 +28,8 @@
   loop_control:
     loop_var: pubkey_file
   when:
-    - user_task.state == 'present'
     - item.authorized_keys is defined
+    - user_task.state == 'present'
 
 - name: Ensure jailed user has a homedir inside the jail (if configured).
   file:
