@@ -114,6 +114,9 @@ None.
 
     ssh_chroot_jail_users:
       - name: janedoe
+        plain_password: {desired plain password}   # optionnal, must be defined as long as password_salt to be used
+        password_salt: {salt to encrypt password}
+        password: {encrypted_password}  # optionnal, backup password is plain_password is unused, if missing only SSH key authent is available
         home: /home/janedoe
         shell: /bin/bash
         authorized_keys:
@@ -123,6 +126,14 @@ None.
             mount_point: '/home/cvlb_lib_upload853/covalab_mag2_media/'  # optional, defaults to {{ ssh_chroot_jail_path }}{{ item.src_dir }}
             rw: {yes|no}  # optional, default no
             state: {present|absent|mounted|unmounted}  # optional, default mounted
+
+Precedence rules :
+* 1. plain_password + salt
+* 2. password
+* 3. no password auth
+
+`plain_password` + `password_salt`: must be defined to compute an encrypted password with `{{ item.plain_password| password_hash('sha512', item.password_salt }}`
+
 ## License
 
 MIT (Expat) / BSD

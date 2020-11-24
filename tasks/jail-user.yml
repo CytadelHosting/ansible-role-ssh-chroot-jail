@@ -1,8 +1,23 @@
 ---
+
+
+- name: Get  user's encrypted password
+  set_fact:
+    local_password: "{{ item.password | default ('!') }}"
+
+- name: Compute user's password with plain_password + salt
+  set_fact:
+    local_password: "{{ item.plain_password | password_hash('sha512', item.password_salt | default ('C8reC.Xc')) }}"
+  when:
+    - item.plain_password is defined and item.plain_password != ''
+
+- debug:
+    msg: "computed password={{ local_password }}"
+
 - name: Ensure jailed user exists.
   user:
     name: "{{ item.name }}"
-    password: "{{ item.password | default(omit) }}"
+    password: "{{ local_password | default('!') }}"
     groups: "{{ item.groups | default(ssh_chroot_jail_group_name) }}"
     append: true
     shell: "{{ item.shell | default(omit) }}"
@@ -10,7 +25,9 @@
     createhome: "{{ item.createhome | default(omit) }}"
   register: user_task
 
-
+- name: Get encrypted_password
+  set_fact:
+    local_password: ''
 
 - name: Add authorized SSH public keys to jailed user .ssh/authorized_keys
   debug:
