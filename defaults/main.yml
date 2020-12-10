@@ -63,6 +63,7 @@ ssh_chroot_bins:
   - /usr/bin/id
   - /usr/bin/whoami
   - /usr/bin/groups
+  - /usr/bin/rsync
   # Can also set mode, e.g. to setuid or set different permissions.
   # - bin: /bin/ping
   #   mode: 4755

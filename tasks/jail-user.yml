@@ -46,7 +46,9 @@
     loop_var: pubkey_file
   when:
     - item.authorized_keys is defined
-    - user_task.state == 'present'
+    - not user_task.failed
+    - (item.state|default ('present')) == 'present'
+  ignore_errors: ansible_check_mode
 
 - name: Ensure jailed user has a homedir inside the jail (if configured).
   file:
