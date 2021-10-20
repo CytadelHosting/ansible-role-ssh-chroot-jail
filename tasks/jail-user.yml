@@ -48,7 +48,7 @@
     - item.authorized_keys is defined
     - not user_task.failed
     - (item.state|default ('present')) == 'present'
-  ignore_errors: ansible_check_mode
+  ignore_errors: "{{ ansible_check_mode }}"
 
 - name: Ensure jailed user has a homedir inside the jail (if configured).
   file:
