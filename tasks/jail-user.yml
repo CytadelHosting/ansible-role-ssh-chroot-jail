@@ -17,6 +17,7 @@
 - name: Ensure jailed user exists.
   user:
     name: "{{ item.name }}"
+    group: "{{ item.group | default(omit) }}"
     password: "{{ local_password | default('!') }}"
     groups: "{{ item.groups | default(ssh_chroot_jail_group_name) }}"
     append: true
@@ -29,11 +30,12 @@
   set_fact:
     local_password: ''
 
-- name: Add authorized SSH public keys to jailed user .ssh/authorized_keys
+- name: Debug user creation result
   debug:
     var: user_task
 
-- debug:
+- name: Debug item
+  debug:
     var: item
 
 # add several SSH public keys to jailed user
@@ -55,7 +57,7 @@
     path: "{{ ssh_chroot_jail_path }}{{ item.home }}"
     state: directory
     owner: "{{ item.name }}"
-    group: "{{ item.name }}"
+    group: "{{ item.group | default(item.name) }}"
     mode: 0755
   when: item.home is defined
 

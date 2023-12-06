@@ -15,6 +15,7 @@ ssh_chroot_jail_dirs:
   - usr/lib
   - usr/lib64
   - home
+  - home_local
 
 # can include type: c, b, p
 # c = char device (unbuffered) [the default]
