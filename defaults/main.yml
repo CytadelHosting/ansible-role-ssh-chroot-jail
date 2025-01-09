@@ -87,3 +87,21 @@ ssh_chroot_sshd_chroot_jail_config: |
       AllowTcpForwarding no
 
 ssh_chroot_jail_dirs_recurse: true
+
+
+
+sshd_sftpd_protocol:                      2
+sshd_sftpd_port:                          22
+sshd_sftpd_allow_agent_forwarding:        'no'
+sshd_sftpd_allow_stream_local_forwarding: 'no'
+sshd_sftpd_allow_tcp_forwarding:          'no'
+sshd_sftpd_loglevel:                      'VERBOSE'     # 'INFO'
+
+sshd_sftpd_maxauthtries:                  3
+sshd_sftpd_logingracetime:                30
+sshd_sftpd_maxstartups:                   '10:30:60'
+
+sshd_sftpd_ciphers:                       'chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com'
+sshd_sftpd_kexalgorithms:                 'curve25519-sha256@libssh.org,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512'
+sshd_sftpd_macs:                          'hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com'
+sshd_sftpd_hostkeyalgorithms:             'ssh-ed25519,rsa-sha2-512,rsa-sha2-256'
