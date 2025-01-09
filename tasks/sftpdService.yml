@@ -1,0 +1,43 @@
+---
+
+
+#- name: Ensure SSHD config contains correct SFTP configuration
+#  lineinfile:
+#    path: /etc/ssh/sshd_config
+#    regexp: 'Subsystem\s+sftp'
+#    line: 'Subsystem sftp internal-sftp -u 002'
+#  notify: restart sshd-sftp daemon
+
+#- name: Ensure SSHD config contains jail configuration.
+#  blockinfile:
+#    path: /etc/ssh/sshd_config
+#    block: "{{ ssh_chroot_sshd_chroot_jail_config }}"
+#    insertafter: EOF
+#  notify: restart sshd-sftp daemon
+
+
+
+- name: manage sshd_sftp_config configuration file
+  template:
+    src: sshd_sftp_config.j2 
+    dest: "/etc/ssh/sshd_sftp_config"
+    owner: root
+    group: root
+    mode: 0600
+  notify: restart sshd-sftp daemon
+
+
+- name: manage php-fpm systemd service scripts
+  template:
+    src: sshd-sftp.service.j2
+    dest: "/etc/systemd/system/sshd-sftp.service"
+    owner: root
+    group: root
+    mode: 0600
+  #register: fpm_systemd_modified
+  notify: restart sshd-sftp daemon
+
+
+- name: just force systemd to reread configs (2.4 and above)
+  systemd:
+    daemon_reload: yes
