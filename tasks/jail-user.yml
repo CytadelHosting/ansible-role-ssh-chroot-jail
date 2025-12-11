@@ -37,6 +37,16 @@
 # -----------------------------------------------------------------------------
 # Création de l'utilisateur système
 # -----------------------------------------------------------------------------
+# D'abord retirer l'utilisateur de l'autre groupe jail (mutuellement exclusifs)
+- name: "{{ jail_user.name }} | Remove from opposite jail group"
+  command: "gpasswd -d {{ jail_user.name }} {{ _opposite_group }}"
+  vars:
+    _opposite_group: "{{ sftp_chroot_jail_group_name if (jail_user.allow_interactive | default(false)) else ssh_chroot_jail_group_name }}"
+  register: gpasswd_result
+  failed_when: false
+  changed_when: gpasswd_result.rc == 0
+
+
 - name: "{{ jail_user.name }} | Ensure system user exists"
   user:
     name: "{{ jail_user.name }}"
