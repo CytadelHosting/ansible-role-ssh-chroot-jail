@@ -1,3 +1,27 @@
+{{ ansible_managed | comment }}
+# =============================================================================
+# Configuration tmpfiles.d pour les jails SSH/SFTP
+# =============================================================================
+# Ce fichier assure la recréation des devices dans les jails après reboot
+# Placé dans : {{ ssh_chroot_tmpfiles_conf_path }}
+#
+# Pour appliquer manuellement : systemd-tmpfiles --create {{ ssh_chroot_tmpfiles_conf_path }}
+# =============================================================================
+
+# Format : Type Path Mode User Group Age Argument
+# c = character device
+
+# Devices globaux (pour compatibilité avec anciennes jails partagées)
 {% for device in ssh_chroot_jail_devs %}
 {{ device.type | default('c') }} {{ ssh_chroot_jail_path }}/dev/{{ device.dev }} 0666 root root - {{ device.major }}:{{ device.minor }}
+{% endfor %}
+
+# Devices pour chaque jail utilisateur
+{% for user in ssh_chroot_jail_users %}
+{% if (user.state | default('present')) == 'present' %}
+# === Jail {{ user.name }} ===
+{% for device in ssh_chroot_jail_devs %}
+{{ device.type | default('c') }} {{ ssh_chroot_jail_path }}/{{ user.name }}/dev/{{ device.dev }} 0666 root root - {{ device.major }}:{{ device.minor }}
+{% endfor %}
+{% endif %}
 {% endfor %}

@@ -1,86 +1,120 @@
 ---
+# =============================================================================
+# Gestion d'un utilisateur jailed
+# =============================================================================
+# Variable attendue : jail_user (dictionnaire)
+# Format :
+#   - name: alice
+#     home: /home_local/alice
+#     allow_interactive: false
+#     authorized_keys: [...]
+#     extra_bins: []
+#     bind_remounts: [...]
+#     ssh_match_options: {}
 
-
-- name: Get user's encrypted password
+# -----------------------------------------------------------------------------
+# Calcul du shell et du groupe en fonction de allow_interactive
+# -----------------------------------------------------------------------------
+- name: "{{ jail_user.name }} | Determine shell based on allow_interactive"
   set_fact:
-    local_password: "{{ item.password | default ('!') }}"
+    _user_shell: "{{ '/bin/bash' if (jail_user.allow_interactive | default(false)) else '/usr/sbin/nologin' }}"
+    _user_group: "{{ ssh_chroot_jail_group_name if (jail_user.allow_interactive | default(false)) else sftp_chroot_jail_group_name }}"
 
-- name: Compute user's password with plain_password + salt
+# -----------------------------------------------------------------------------
+# Gestion du mot de passe (optionnel)
+# -----------------------------------------------------------------------------
+- name: "{{ jail_user.name }} | Set password (encrypted or disabled)"
   set_fact:
-    local_password: "{{ item.plain_password | password_hash('sha512', item.password_salt | default ('C8reC.Xc')) }}"
+    _user_password: "{{ jail_user.password | default('!') }}"
+
+- name: "{{ jail_user.name }} | Compute password from plain_password if provided"
+  set_fact:
+    _user_password: "{{ jail_user.plain_password | password_hash('sha512', jail_user.password_salt | default('C8reC.Xc')) }}"
   when:
-    - item.plain_password is defined and item.plain_password != ''
+    - jail_user.plain_password is defined
+    - jail_user.plain_password != ''
 
-- debug:
-    msg: "computed password={{ local_password }}"
-
-- name: Ensure jailed user exists.
+# -----------------------------------------------------------------------------
+# Création de l'utilisateur système
+# -----------------------------------------------------------------------------
+- name: "{{ jail_user.name }} | Ensure system user exists"
   user:
-    name: "{{ item.name }}"
-    group: "{{ item.group | default(omit) }}"
-    password: "{{ local_password | default('!') }}"
-    groups: "{{ item.groups | default(ssh_chroot_jail_group_name) }}"
+    name: "{{ jail_user.name }}"
+    password: "{{ _user_password }}"
+    group: "{{ jail_user.group | default(omit) }}"
+    groups: "{{ _user_group }}"
     append: true
-    shell: "{{ item.shell | default(omit) }}"
-    home: "{{ item.home | default(omit) }}"
-    createhome: "{{ item.createhome | default(omit) }}"
-  register: user_task
+    shell: "{{ _user_shell }}"
+    home: "{{ jail_user.home | default(omit) }}"
+    create_home: "{{ jail_user.create_home | default(true) }}"
+    state: present
+  register: user_created
 
-- name: Get encrypted_password
+# -----------------------------------------------------------------------------
+# Récupération des infos utilisateur (uid/gid)
+# -----------------------------------------------------------------------------
+- name: "{{ jail_user.name }} | Get user info"
+  getent:
+    database: passwd
+    key: "{{ jail_user.name }}"
+
+- name: "{{ jail_user.name }} | Store user info"
   set_fact:
-    local_password: ''
+    jail_user_info:
+      uid: "{{ getent_passwd[jail_user.name][1] }}"
+      group: "{{ getent_passwd[jail_user.name][2] }}"
 
-- name: Debug user creation result
-  debug:
-    var: user_task
+- name: "{{ jail_user.name }} | Get group name"
+  getent:
+    database: group
+    key: "{{ jail_user_info.group }}"
+  register: group_info_result
+  failed_when: false
 
-- name: Debug item
-  debug:
-    var: item
+- name: "{{ jail_user.name }} | Store group name"
+  set_fact:
+    _user_group_name: "{{ jail_user.group | default(jail_user.name) }}"
 
-# add several SSH public keys to jailed user
-- name: Add authorized SSH public keys to jailed user .ssh/authorized_keys
+# -----------------------------------------------------------------------------
+# Gestion des clés SSH autorisées (dans le home RÉEL, pas la jail)
+# -----------------------------------------------------------------------------
+- name: "{{ jail_user.name }} | Add authorized SSH public keys"
   authorized_key:
-    user: "{{ item.name }}"
+    user: "{{ jail_user.name }}"
     key: "{{ lookup('file', pubkey_file) }}"
-  loop: "{{ item.authorized_keys }}"
+    state: present
+  loop: "{{ jail_user.authorized_keys | default([]) }}"
   loop_control:
     loop_var: pubkey_file
-  when:
-    - item.authorized_keys is defined
-    - not user_task.failed
-    - (item.state|default ('present')) == 'present'
+  when: jail_user.authorized_keys is defined
   ignore_errors: "{{ ansible_check_mode }}"
 
-- name: Ensure jailed user has a homedir inside the jail (if configured).
+# -----------------------------------------------------------------------------
+# Création de la jail individuelle
+# -----------------------------------------------------------------------------
+- include_tasks: createJail.yml
+
+# -----------------------------------------------------------------------------
+# Configuration des bind mounts
+# -----------------------------------------------------------------------------
+- name: "{{ jail_user.name }} | Ensure bind mount directories exist in jail"
   file:
-    path: "{{ ssh_chroot_jail_path }}{{ item.home }}"
+    path: "{{ ssh_chroot_jail_path }}/{{ jail_user.name }}{{ bind.mount_point | default(bind.src_dir) }}"
     state: directory
-    owner: "{{ item.name }}"
-    group: "{{ item.group | default(item.name) }}"
-    mode: 0755
-  when: item.home is defined
-
-- name: Ensure account skeleton files are copied into jailed user's home.
-  command: "cp -r -n /etc/skel/. {{ ssh_chroot_jail_path }}{{ item.home }}"
-  args:
-    warn: false
-  become: true
-  become_user: "{{ item.name }}"
-  failed_when: false
-  when:
-    - item.home is defined
-    - user_task.changed
-
-- name: Remount bind dirs in the jail
-  mount:
-    path: "{{ ssh_chroot_jail_path }}{{ bind.mount_point | default(bind.src_dir) }}"
-    src: "{{ bind.src_dir }}"
-    fstype: 'none'
-    opts: "defaults,bind,{{ 'rw' if (bind.rw is defined and bind.rw) else 'ro' }}"
-    state: "{{ bind.state | default ('mounted') }}"
-  loop: "{{ item.bind_remounts }}"
+    owner: "{{ jail_user.name }}"
+    group: "{{ jail_user.group | default(jail_user.name) }}"
+    mode: '0755'
+  loop: "{{ jail_user.bind_remounts | default([]) }}"
   loop_control:
     loop_var: bind
-  when:
-    - item.bind_remounts is defined
+
+- name: "{{ jail_user.name }} | Mount bind directories"
+  mount:
+    path: "{{ ssh_chroot_jail_path }}/{{ jail_user.name }}{{ bind.mount_point | default(bind.src_dir) }}"
+    src: "{{ bind.src_dir }}"
+    fstype: 'none'
+    opts: "defaults,bind,{{ 'rw' if (bind.rw | default(false)) else 'ro' }}"
+    state: "{{ bind.state | default('mounted') }}"
+  loop: "{{ jail_user.bind_remounts | default([]) }}"
+  loop_control:
+    loop_var: bind

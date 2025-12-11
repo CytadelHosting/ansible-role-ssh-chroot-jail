@@ -1,0 +1,107 @@
+---
+# =============================================================================
+# Suppression d'un utilisateur jailed
+# =============================================================================
+# Variable attendue : jail_user (dictionnaire avec state: absent)
+#
+# Actions :
+#   1. Démontage des bind mounts
+#   2. Archivage de la jail
+#   3. Suppression de l'utilisateur système
+#   4. Suppression de la jail
+
+# -----------------------------------------------------------------------------
+# Vérification de l'existence de la jail
+# -----------------------------------------------------------------------------
+- name: "{{ jail_user.name }} | Check if jail exists"
+  stat:
+    path: "{{ ssh_chroot_jail_path }}/{{ jail_user.name }}"
+  register: jail_exists
+
+# -----------------------------------------------------------------------------
+# Démontage des bind mounts
+# -----------------------------------------------------------------------------
+- name: "{{ jail_user.name }} | Get mounted bind points for this jail"
+  shell: |
+    mount | grep "{{ ssh_chroot_jail_path }}/{{ jail_user.name }}" | awk '{print $3}'
+  register: mounted_points
+  changed_when: false
+  failed_when: false
+  when: jail_exists.stat.exists
+
+- name: "{{ jail_user.name }} | Unmount all bind mounts"
+  mount:
+    path: "{{ item }}"
+    state: unmounted
+  loop: "{{ mounted_points.stdout_lines | default([]) }}"
+  when:
+    - jail_exists.stat.exists
+    - mounted_points.stdout_lines | default([]) | length > 0
+
+- name: "{{ jail_user.name }} | Remove fstab entries for bind mounts"
+  mount:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ mounted_points.stdout_lines | default([]) }}"
+  when:
+    - jail_exists.stat.exists
+    - mounted_points.stdout_lines | default([]) | length > 0
+
+# -----------------------------------------------------------------------------
+# Archivage de la jail
+# -----------------------------------------------------------------------------
+- name: "{{ jail_user.name }} | Generate archive filename with timestamp"
+  set_fact:
+    _archive_filename: "{{ jail_user.name }}_{{ ansible_date_time.iso8601_basic_short }}.tar.gz"
+  when: jail_exists.stat.exists
+
+- name: "{{ jail_user.name }} | Archive jail before deletion"
+  archive:
+    path: "{{ ssh_chroot_jail_path }}/{{ jail_user.name }}"
+    dest: "{{ ssh_chroot_jail_archive_path }}/{{ _archive_filename }}"
+    format: gz
+    owner: root
+    group: root
+    mode: '0600'
+  when: jail_exists.stat.exists
+  register: archive_result
+
+- name: "{{ jail_user.name }} | Log archive creation"
+  debug:
+    msg: "Jail archivée : {{ ssh_chroot_jail_archive_path }}/{{ _archive_filename }}"
+  when:
+    - jail_exists.stat.exists
+    - archive_result is succeeded
+
+# -----------------------------------------------------------------------------
+# Suppression de l'utilisateur système
+# -----------------------------------------------------------------------------
+- name: "{{ jail_user.name }} | Check if system user exists"
+  getent:
+    database: passwd
+    key: "{{ jail_user.name }}"
+  register: user_exists
+  failed_when: false
+
+- name: "{{ jail_user.name }} | Remove system user"
+  user:
+    name: "{{ jail_user.name }}"
+    state: absent
+    remove: true
+  when: user_exists.ansible_facts.getent_passwd is defined
+
+# -----------------------------------------------------------------------------
+# Suppression de la jail
+# -----------------------------------------------------------------------------
+- name: "{{ jail_user.name }} | Remove jail directory"
+  file:
+    path: "{{ ssh_chroot_jail_path }}/{{ jail_user.name }}"
+    state: absent
+  when:
+    - jail_exists.stat.exists
+    - archive_result is succeeded
+
+- name: "{{ jail_user.name }} | Removal complete"
+  debug:
+    msg: "Utilisateur {{ jail_user.name }} supprimé. Archive : {{ ssh_chroot_jail_archive_path }}/{{ _archive_filename | default('N/A') }}"
+

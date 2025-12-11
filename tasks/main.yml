@@ -1,20 +1,103 @@
 ---
+# =============================================================================
+# SSH CHROOT JAIL - Main tasks
+# =============================================================================
 
-- name: Include OS-specific variables.
+# -----------------------------------------------------------------------------
+# Chargement des variables OS-specific
+# -----------------------------------------------------------------------------
+- name: Include OS-specific variables
   include_vars: "{{ ansible_os_family }}.yml"
 
+# -----------------------------------------------------------------------------
+# Backup de la configuration originale (première exécution uniquement)
+# -----------------------------------------------------------------------------
+- import_tasks: backup_original_config.yml
 
-- import_tasks: createJail.yml
-
-
+# -----------------------------------------------------------------------------
+# Installation du service SSHD jail (sshd@jail)
+# -----------------------------------------------------------------------------
 - import_tasks: sftpdService.yml
 
+# -----------------------------------------------------------------------------
+# Installation de l2chroot (script de copie des librairies)
+# -----------------------------------------------------------------------------
+- name: Ensure l2chroot script is installed
+  template:
+    src: "{{ ssh_chroot_l2chroot_template }}"
+    dest: "{{ ssh_chroot_l2chroot_path }}"
+    owner: root
+    group: root
+    mode: '0755'
 
-- name: Ensure an ssh jail group exists.
+# -----------------------------------------------------------------------------
+# Création des groupes système
+# -----------------------------------------------------------------------------
+- name: Ensure sshjail group exists (interactive shell)
   group:
     name: "{{ ssh_chroot_jail_group_name }}"
-    gid:  "{{ ssh_chroot_jail_group_gid | default (omit) }}"
+    gid: "{{ ssh_chroot_jail_group_gid | default(omit) }}"
     state: present
 
+- name: Ensure sftpjail group exists (SFTP only)
+  group:
+    name: "{{ sftp_chroot_jail_group_name }}"
+    state: present
+
+# -----------------------------------------------------------------------------
+# Création du répertoire racine des jails
+# -----------------------------------------------------------------------------
+- name: Ensure jail root directory exists
+  file:
+    path: "{{ ssh_chroot_jail_path }}"
+    owner: root
+    group: root
+    mode: '0755'
+    state: directory
+
+# -----------------------------------------------------------------------------
+# Synchronisation globale des binaires (si demandée)
+# -----------------------------------------------------------------------------
+- import_tasks: sync-bins.yml
+  when: ssh_chroot_jail_sync_bins | bool
+
+# -----------------------------------------------------------------------------
+# Gestion des utilisateurs jailed
+# -----------------------------------------------------------------------------
+# Suppression des utilisateurs marqués absent
+- include_tasks: remove-user.yml
+  loop: "{{ ssh_chroot_jail_users | selectattr('state', 'defined') | selectattr('state', 'equalto', 'absent') | list }}"
+  loop_control:
+    loop_var: jail_user
+
+# Création/mise à jour des utilisateurs présents
 - include_tasks: jail-user.yml
-  with_items: "{{ ssh_chroot_jail_users }}"
+  loop: "{{ ssh_chroot_jail_users | rejectattr('state', 'defined') | list + ssh_chroot_jail_users | selectattr('state', 'defined') | selectattr('state', 'equalto', 'present') | list }}"
+  loop_control:
+    loop_var: jail_user
+
+# -----------------------------------------------------------------------------
+# Mise à jour de la configuration tmpfiles.d (recréation devices au reboot)
+# -----------------------------------------------------------------------------
+- name: Update tmpfiles.d configuration for jail devices
+  template:
+    src: ssh-chroot.conf.j2
+    dest: "{{ ssh_chroot_tmpfiles_conf_path }}"
+    owner: root
+    group: root
+    mode: '0644'
+  when: ansible_service_mgr == 'systemd'
+
+# -----------------------------------------------------------------------------
+# Régénération de la config SSHD (pour les Match User)
+# -----------------------------------------------------------------------------
+- name: Update sshd_config_jail with user exceptions
+  template:
+    src: sshd_config_jail.j2
+    dest: "/etc/ssh/sshd_config_{{ ssh_chroot_service_name }}"
+    owner: root
+    group: root
+    mode: '0600'
+    validate: '/usr/sbin/sshd -t -f %s'
+  notify:
+    - restart sshd jail daemon

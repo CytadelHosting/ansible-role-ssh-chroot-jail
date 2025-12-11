@@ -1,0 +1,35 @@
+---
+# =============================================================================
+# Synchronisation des binaires dans toutes les jails existantes
+# =============================================================================
+# Ce fichier est exécuté quand ssh_chroot_jail_sync_bins: true
+# Il met à jour les binaires et librairies dans toutes les jails existantes
+# Utile après une mise à jour de l'OS ou ajout de nouveaux binaires
+
+# -----------------------------------------------------------------------------
+# Récupération de la liste des jails existantes
+# -----------------------------------------------------------------------------
+- name: Get list of existing jails
+  find:
+    paths: "{{ ssh_chroot_jail_path }}"
+    file_type: directory
+    recurse: false
+  register: existing_jails
+
+- name: Filter out archive files and special directories
+  set_fact:
+    _jail_dirs: "{{ existing_jails.files | map(attribute='path') | map('basename') | reject('match', '^base$') | reject('match', '.*\\.tar\\.gz$') | list }}"
+
+- name: Display jails to synchronize
+  debug:
+    msg: "Jails à synchroniser : {{ _jail_dirs }}"
+
+# -----------------------------------------------------------------------------
+# Synchronisation pour chaque jail
+# -----------------------------------------------------------------------------
+- name: Synchronize binaries for each jail
+  include_tasks: sync-bins-jail.yml
+  loop: "{{ _jail_dirs }}"
+  loop_control:
+    loop_var: _jail_name
+

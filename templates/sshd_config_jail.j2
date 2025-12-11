@@ -1,0 +1,101 @@
+{{ ansible_managed | comment }}
+# =============================================================================
+# Configuration SSHD pour comptes jailed (SSH/SFTP)
+# =============================================================================
+# Service : sshd@{{ ssh_chroot_service_name }}
+# Port    : {{ sshd_jail_port }}
+# =============================================================================
+
+# =============================
+# === BASIC SERVER SETTINGS ===
+# =============================
+
+Port {{ sshd_jail_port }}
+#AddressFamily any
+#ListenAddress 0.0.0.0
+#ListenAddress ::
+
+PermitRootLogin {{ sshd_jail_permit_root_login }}
+ChallengeResponseAuthentication {{ sshd_jail_challenge_response_authentication }}
+
+UsePAM {{ sshd_jail_use_pam }}
+PasswordAuthentication {{ sshd_jail_password_authentication }}
+PubkeyAuthentication {{ sshd_jail_pubkey_authentication }}
+
+AllowAgentForwarding {{ sshd_jail_allow_agent_forwarding }}
+AllowTcpForwarding {{ sshd_jail_allow_tcp_forwarding }}
+X11Forwarding {{ sshd_jail_x11_forwarding }}
+
+PrintMotd {{ sshd_jail_print_motd }}
+UseDNS {{ sshd_jail_use_dns }}
+
+# KeepAlive behavior
+ClientAliveInterval {{ sshd_jail_client_alive_interval }}
+ClientAliveCountMax {{ sshd_jail_client_alive_count_max }}
+
+# Limites de connexion
+MaxAuthTries {{ sshd_jail_max_auth_tries }}
+LoginGraceTime {{ sshd_jail_login_grace_time }}
+MaxStartups {{ sshd_jail_max_startups }}
+
+# Logging
+LogLevel {{ sshd_jail_log_level }}
+
+# Algorithmes cryptographiques
+Ciphers {{ sshd_jail_ciphers }}
+KexAlgorithms {{ sshd_jail_kex_algorithms }}
+MACs {{ sshd_jail_macs }}
+HostKeyAlgorithms {{ sshd_jail_host_key_algorithms }}
+
+# Banner
+Banner none
+DebianBanner no
+
+# Allow client to pass locale environment variables
+AcceptEnv LANG LC_*
+
+# ===========================
+# === SFTP SUBSYSTEM      ===
+# ===========================
+# Umask {{ sshd_jail_sftp_umask }} => contrôle les permissions par défaut sur fichiers/dossiers créés via SFTP
+Subsystem sftp internal-sftp -u {{ sshd_jail_sftp_umask }}
+
+# ===========================
+# === GROUPES AUTORISÉS   ===
+# ===========================
+AllowGroups {{ ssh_chroot_jail_group_name }} {{ sftp_chroot_jail_group_name }}
+
+# ===========================
+# === CHROOT PAR GROUPE   ===
+# ===========================
+
+# Groupe sshjail : shell interactif dans la jail
+Match Group {{ ssh_chroot_jail_group_name }}
+    ChrootDirectory {{ ssh_chroot_jail_path }}/%u
+    X11Forwarding no
+    AllowTcpForwarding no
+    # Pas de ForceCommand -> shell interactif disponible
+
+# Groupe sftpjail : SFTP uniquement
+Match Group {{ sftp_chroot_jail_group_name }}
+    ChrootDirectory {{ ssh_chroot_jail_path }}/%u
+    ForceCommand internal-sftp
+    X11Forwarding no
+    AllowTcpForwarding no
+
+# ===========================
+# === EXCEPTIONS USERS    ===
+# ===========================
+{% for user in ssh_chroot_jail_users %}
+{% if user.ssh_match_options is defined and user.ssh_match_options | length > 0 %}
+{% if (user.state | default('present')) == 'present' %}
+
+# Exception pour {{ user.name }}
+Match User {{ user.name }}
+{% for option, value in user.ssh_match_options.items() %}
+    {{ option }} {{ value }}
+{% endfor %}
+{% endif %}
+{% endif %}
+{% endfor %}
+

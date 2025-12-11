@@ -1,44 +1,38 @@
 ---
+# =============================================================================
+# Molecule - Playbook de test pour le rôle ssh-chroot-jail
+# =============================================================================
+
 - name: Converge
   hosts: all
   become: true
 
   vars:
-    ssh_chroot_l2chroot_path: /usr/bin/l2chroot
+    # Utilisateurs de test
     ssh_chroot_jail_users:
-      - name: foo
-        home: /home/foo
-        shell: /bin/bash
+      # Alice : SFTP only (allow_interactive: false par défaut)
+      - name: alice
+        home: /home_local/alice
+        authorized_keys: []
+        bind_remounts: []
 
-  pre_tasks:
-    - name: Update apt cache.
-      apt: update_cache=true cache_valid_time=600
-      when: ansible_os_family == 'Debian'
+      # Bob : Shell interactif dans la jail
+      - name: bob
+        home: /home_local/bob
+        allow_interactive: true
+        authorized_keys: []
+        extra_bins:
+          - /usr/bin/git
+        bind_remounts: []
 
-    - name: Ensure build dependencies are installed.
-      package:
-        name:
-          - ed
-          - nano
-          - vim
-          - coreutils
-        state: present
-
-    - name: Ensure build dependencies are installed (RedHat).
-      package:
-        name:
-          - openssh-server
-          - openssh-clients
-        state: present
-      when: ansible_os_family == 'RedHat'
-
-    - name: Ensure build dependencies are installed (Debian).
-      apt:
-        name:
-          - openssh-server
-          - openssh-client
-        state: present
-      when: ansible_os_family == 'Debian'
+      # Charlie : SFTP avec exception (tunnel MySQL)
+      - name: charlie
+        home: /home_local/charlie
+        allow_interactive: false
+        authorized_keys: []
+        ssh_match_options:
+          AllowTcpForwarding: 'yes'
+          PermitOpen: '127.0.0.1:3306'
 
   roles:
-    - role: geerlingguy.ssh-chroot-jail
+    - role: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') | basename }}"

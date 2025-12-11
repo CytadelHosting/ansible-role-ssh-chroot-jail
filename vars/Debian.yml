@@ -1,3 +1,24 @@
 ---
-sshd_sftp_daemon: 'sshd-sftp'
+# =============================================================================
+# Variables spécifiques Debian/Ubuntu
+# =============================================================================
+
+# Nom du service SSHD jail (utilisé par les handlers)
+sshd_jail_daemon: 'sshd@jail'
+
+# Chemin des librairies 64-bit
 lib64_path: /lib/x86_64-linux-gnu
+
+# Chemin des librairies NSS (pour résolution passwd/group/hosts)
+nss_lib_path: /lib/x86_64-linux-gnu
+
+# Librairies NSS à copier dans les jails
+nss_libs:
+  - libnss_files.so.2
+  - libnss_dns.so.2
+  - libnss_compat.so.2
+
+# Chemin terminfo pour le support terminal
+terminfo_paths:
+  - /usr/share/terminfo
+  - /lib/terminfo

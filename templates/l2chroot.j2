@@ -1,47 +1,57 @@
 #!/bin/bash
-# Use this script to copy shared (libs) files to Apache/Lighttpd chrooted
-# jail server.
-# ----------------------------------------------------------------------------
-# Written by nixCraft <http://www.cyberciti.biz/tips/>
-# (c) 2006 nixCraft under GNU GPL v2.0+
-# + Added ld-linux support
-# + Added error checking support
-# ------------------------------------------------------------------------------
-# See url for usage:
-# http://www.cyberciti.biz/tips/howto-setup-lighttpd-php-mysql-chrooted-jail.html
-# -------------------------------------------------------------------------------
-# Set CHROOT directory name
-BASE="{{ ssh_chroot_jail_path }}"
+# =============================================================================
+# l2chroot - Copie les librairies partagées d'un binaire dans une jail
+# =============================================================================
+# Usage : l2chroot /path/to/binary
+#
+# La variable d'environnement BASE définit le chemin de la jail cible.
+# Si BASE n'est pas définie, utilise le chemin par défaut.
+#
+# Source originale : nixCraft - http://www.cyberciti.biz/tips/
+# Modifié pour support multi-jail
+# =============================================================================
+
+# Chemin de base de la jail (peut être surchargé via variable d'env BASE)
+JAIL="${BASE:-{{ ssh_chroot_jail_path }}}"
 
 if [ $# -eq 0 ]; then
-  echo "Syntax : $0 /path/to/executable"
-  echo "Example: $0 /usr/bin/php5-cgi"
-  exit 1
+    echo "Usage: $0 /path/to/executable"
+    echo "       BASE=/jails/alice $0 /usr/bin/vim"
+    exit 1
 fi
 
-[ ! -d $BASE ] && mkdir -p $BASE || :
+BINARY="$1"
 
-# iggy ld-linux* file as it is not shared one
-FILES="$(ldd $1 | awk '{ print $3 }' |egrep -v ^'\(')"
+if [ ! -x "$BINARY" ]; then
+    echo "Erreur: $BINARY n'est pas un exécutable valide"
+    exit 1
+fi
 
-echo "Copying shared files/libs to $BASE..."
-for i in $FILES
-do
-  d="$(dirname $i)"
-  [ ! -d $BASE$d ] && mkdir -p $BASE$d || :
-  /bin/cp $i $BASE$d
+[ ! -d "$JAIL" ] && mkdir -p "$JAIL"
+
+# Récupération des librairies partagées (hors ld-linux)
+FILES=$(ldd "$BINARY" 2>/dev/null | awk '{ print $3 }' | grep -E '^/')
+
+echo "Copie des librairies de $BINARY vers $JAIL..."
+
+for lib in $FILES; do
+    if [ -f "$lib" ]; then
+        dir=$(dirname "$lib")
+        [ ! -d "$JAIL$dir" ] && mkdir -p "$JAIL$dir"
+        cp -n "$lib" "$JAIL$dir/" 2>/dev/null
+    fi
 done
 
-# copy /lib/ld-linux* or /lib64/ld-linux* to $BASE/$sldlsubdir
-# get ld-linux full file location
-sldl="$(ldd $1 | grep 'ld-linux' | awk '{ print $1}')"
-# now get sub-dir
-sldlsubdir="$(dirname $sldl)"
+# Copie du loader ld-linux
+LDLINUX=$(ldd "$BINARY" 2>/dev/null | grep 'ld-linux' | awk '{ print $1 }')
 
-if [ ! -f $BASE$sldl ];
-then
-  echo "Copying $sldl $BASE$sldlsubdir..."
-  /bin/cp $sldl $BASE$sldlsubdir
-else
-  :
+if [ -n "$LDLINUX" ] && [ -f "$LDLINUX" ]; then
+    lddir=$(dirname "$LDLINUX")
+    [ ! -d "$JAIL$lddir" ] && mkdir -p "$JAIL$lddir"
+    if [ ! -f "$JAIL$LDLINUX" ]; then
+        echo "Copie de $LDLINUX..."
+        cp "$LDLINUX" "$JAIL$lddir/"
+    fi
 fi
+
+echo "Terminé."

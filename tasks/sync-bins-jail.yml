@@ -1,0 +1,46 @@
+---
+# =============================================================================
+# Synchronisation des binaires pour une jail spécifique
+# =============================================================================
+# Variable attendue : _jail_name (nom de la jail)
+
+- name: "{{ _jail_name }} | Sync - Copy binaries"
+  copy:
+    src: "{{ item.bin | default(item) }}"
+    dest: "{{ ssh_chroot_jail_path }}/{{ _jail_name }}{{ item.bin | default(item) }}"
+    remote_src: true
+    mode: "{{ item.mode | default('0755') }}"
+  loop: "{{ ssh_chroot_bins }}"
+  failed_when: false
+
+- name: "{{ _jail_name }} | Sync - Update libraries via l2chroot"
+  command: "{{ ssh_chroot_l2chroot_path }} {{ item.bin | default(item) }}"
+  environment:
+    BASE: "{{ ssh_chroot_jail_path }}/{{ _jail_name }}"
+  when: item.l2chroot is not defined or item.l2chroot
+  loop: "{{ ssh_chroot_bins }}"
+  changed_when: false
+  failed_when: false
+
+- name: "{{ _jail_name }} | Sync - Copy extra items"
+  copy:
+    src: "{{ item }}"
+    dest: "{{ ssh_chroot_jail_path }}/{{ _jail_name }}{{ item }}"
+    remote_src: true
+  loop: "{{ ssh_chroot_copy_extra_items }}"
+  failed_when: false
+
+- name: "{{ _jail_name }} | Sync - Update terminfo"
+  shell: "cp -a {{ item }} {{ ssh_chroot_jail_path }}/{{ _jail_name }}{{ item }}"
+  loop: "{{ terminfo_paths }}"
+  changed_when: false
+  failed_when: false
+
+- name: "{{ _jail_name }} | Sync - Update NSS libraries"
+  copy:
+    src: "{{ nss_lib_path }}/{{ item }}"
+    dest: "{{ ssh_chroot_jail_path }}/{{ _jail_name }}{{ nss_lib_path }}/{{ item }}"
+    remote_src: true
+  loop: "{{ nss_libs }}"
+  failed_when: false
+

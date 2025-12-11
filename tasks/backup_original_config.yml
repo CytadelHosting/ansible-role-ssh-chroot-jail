@@ -1,0 +1,28 @@
+---
+# =============================================================================
+# Backup de la configuration SSHD originale
+# =============================================================================
+# Ce fichier sauvegarde /etc/ssh/sshd_config une seule fois (première exécution)
+# pour conserver une trace des éventuels comptes SFTP configurés manuellement.
+
+- name: Check if original sshd_config backup already exists
+  stat:
+    path: "{{ ssh_chroot_backup_path }}"
+  register: sshd_backup_stat
+
+- name: Backup original sshd_config (first run only)
+  copy:
+    src: /etc/ssh/sshd_config
+    dest: "{{ ssh_chroot_backup_path }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: '0600'
+    backup: false
+  when: not sshd_backup_stat.stat.exists
+
+- name: Log backup creation
+  debug:
+    msg: "Backup créé : {{ ssh_chroot_backup_path }}"
+  when: not sshd_backup_stat.stat.exists
+

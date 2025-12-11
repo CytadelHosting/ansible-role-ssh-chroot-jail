@@ -1,107 +1,230 @@
 ---
-ssh_chroot_jail_path: /var/jail
+# =============================================================================
+# SSH CHROOT JAIL - Configuration par défaut
+# =============================================================================
 
-ssh_chroot_jail_group_name: ssh_jailed
+# -----------------------------------------------------------------------------
+# Chemins principaux
+# -----------------------------------------------------------------------------
+ssh_chroot_jail_path: /jails
 
+# Chemin d'archivage des jails supprimées
+ssh_chroot_jail_archive_path: /jails
+
+# -----------------------------------------------------------------------------
+# Groupes système pour les utilisateurs jailed
+# -----------------------------------------------------------------------------
+# Groupe pour les utilisateurs avec shell interactif dans la jail
+ssh_chroot_jail_group_name: 'sshjail'
+
+# Groupe pour les utilisateurs SFTP uniquement (ForceCommand internal-sftp)
+sftp_chroot_jail_group_name: 'sftpjail'
+
+# GID optionnel pour le groupe sshjail
+# ssh_chroot_jail_group_gid: 2000
+
+# -----------------------------------------------------------------------------
+# Configuration du service SSHD jail
+# -----------------------------------------------------------------------------
+# Nom du service (utilisé avec sshd@<name>)
+ssh_chroot_service_name: 'jail'
+
+# Port d'écoute pour le service jail (les users jailed se connectent ici)
+sshd_jail_port: 22
+
+# -----------------------------------------------------------------------------
+# Umask SFTP
+# -----------------------------------------------------------------------------
+# Umask appliqué aux fichiers/dossiers créés via SFTP
+#
+# Valeurs courantes :
+#   - 007 : rwxrwx--- (owner+group full, others rien) - RECOMMANDÉ pour sécurité
+#   - 002 : rwxrwxr-x (owner+group full, others read+exec)
+#   - 022 : rwxr-xr-x (owner full, group+others read+exec)
+#
+# Référence : OpenSSH sshd_config(5) - Subsystem sftp internal-sftp
+# https://man.openbsd.org/sshd_config#Subsystem
+#
+# Best practice sécurité : 007 empêche tout accès "others", ce qui est préférable
+# dans un environnement multi-utilisateurs où chaque user a sa propre jail.
+# Les fichiers créés seront accessibles uniquement par le owner et son groupe.
+sshd_jail_sftp_umask: '007'
+
+# -----------------------------------------------------------------------------
+# Paramètres de sécurité SSHD
+# -----------------------------------------------------------------------------
+sshd_jail_permit_root_login: 'no'
+sshd_jail_password_authentication: 'no'
+sshd_jail_pubkey_authentication: 'yes'
+sshd_jail_challenge_response_authentication: 'no'
+sshd_jail_use_pam: 'yes'
+sshd_jail_use_dns: 'no'
+sshd_jail_x11_forwarding: 'no'
+sshd_jail_allow_agent_forwarding: 'no'
+sshd_jail_allow_tcp_forwarding: 'no'
+sshd_jail_print_motd: 'no'
+
+# KeepAlive
+sshd_jail_client_alive_interval: 0
+sshd_jail_client_alive_count_max: 3
+
+# Limites de connexion
+sshd_jail_max_auth_tries: 3
+sshd_jail_login_grace_time: 30
+sshd_jail_max_startups: '10:30:60'
+
+# Algorithmes cryptographiques (configuration moderne et sécurisée)
+sshd_jail_ciphers: 'chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com'
+sshd_jail_kex_algorithms: 'curve25519-sha256@libssh.org,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512'
+sshd_jail_macs: 'hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com'
+sshd_jail_host_key_algorithms: 'ssh-ed25519,rsa-sha2-512,rsa-sha2-256'
+
+# Logging
+sshd_jail_log_level: 'VERBOSE'
+
+# -----------------------------------------------------------------------------
+# Utilisateurs jailed
+# -----------------------------------------------------------------------------
+# Liste des utilisateurs à créer dans les jails
+# Format :
+#   ssh_chroot_jail_users:
+#     - name: alice
+#       home: /home_local/alice
+#       allow_interactive: false          # false = SFTP only, true = shell interactif
+#       authorized_keys:
+#         - '.files/ssh_keys/alice.pub'
+#       extra_bins: []                     # binaires additionnels pour cet user
+#       bind_remounts:
+#         - src_dir: '/var/www/alice'
+#           mount_point: '/home_local/alice/www'
+#           rw: yes
+#       state: present                     # present ou absent
+#       # Exceptions SSH optionnelles (génère un bloc Match User)
+#       ssh_match_options:
+#         AllowTcpForwarding: 'yes'
+#         PermitOpen: '127.0.0.1:3306'
+#
 ssh_chroot_jail_users: []
 
+# -----------------------------------------------------------------------------
+# Synchronisation des binaires
+# -----------------------------------------------------------------------------
+# Forcer la resynchronisation de tous les binaires dans toutes les jails
+# Utile après une mise à jour de l'OS ou ajout de binaires à la liste
+# ATTENTION : opération coûteuse, laisser à false en temps normal
+ssh_chroot_jail_sync_bins: false
+
+# -----------------------------------------------------------------------------
+# Structure des répertoires dans chaque jail
+# -----------------------------------------------------------------------------
 ssh_chroot_jail_dirs:
   - bin
   - dev
   - etc
   - lib
   - lib64
+  - proc
   - usr/bin
   - usr/lib
   - usr/lib64
+  - usr/share
   - home
   - home_local
+  - tmp
 
-# can include type: c, b, p
-# c = char device (unbuffered) [the default]
-# b = block device (buffered)
-# p = FIFO device
-# anything else may result in errors with mknod or systemd-tmpfiles
+# Appliquer recurse sur la création des répertoires
+ssh_chroot_jail_dirs_recurse: true
+
+# -----------------------------------------------------------------------------
+# Devices à créer dans chaque jail
+# -----------------------------------------------------------------------------
+# Types : c = char device, b = block device, p = FIFO
 ssh_chroot_jail_devs:
-  - {dev: 'null', major: '1', minor: '3'}
-  - {dev: 'random', major: '5', minor: '0'}
-  - {dev: 'urandom', major: '1', minor: '5'}
-  - {dev: 'zero', major: '1', minor: '8'}
+  - { dev: 'null',    major: '1', minor: '3', type: 'c' }
+  - { dev: 'zero',    major: '1', minor: '5', type: 'c' }
+  - { dev: 'tty',     major: '5', minor: '0', type: 'c' }
+  - { dev: 'random',  major: '1', minor: '8', type: 'c' }
+  - { dev: 'urandom', major: '1', minor: '9', type: 'c' }
 
+# Configuration tmpfiles.d pour recréer les devices au reboot
 ssh_chroot_tmpfiles_conf_path: /etc/tmpfiles.d/ssh-chroot.conf
 
+# -----------------------------------------------------------------------------
+# Binaires à copier dans les jails
+# -----------------------------------------------------------------------------
+# Liste globale des binaires disponibles dans toutes les jails
+# Format simple : '/bin/bash'
+# Format étendu : { bin: '/usr/bin/which', l2chroot: false, mode: '0755' }
 ssh_chroot_bins:
-  - /bin/cp
-  - /bin/sh
+  # === /bin ===
   - /bin/bash
-  - /bin/ls
-  - /bin/rm
+  - /bin/sh
   - /bin/cat
-  - /bin/grep
-  - /bin/sed
   - /bin/chmod
   - /bin/chown
+  - /bin/cp
+  - /bin/grep
+  - /bin/ls
+  - /bin/mkdir
+  - /bin/mv
   - /bin/nano
-  - /usr/bin/tail
-  - /usr/bin/head
+  - /bin/rm
+  - /bin/sed
+  # === /usr/bin ===
   - /usr/bin/awk
-  - /usr/bin/wc
-  - /usr/bin/sort
-  - /usr/bin/uniq
   - /usr/bin/cut
-  - /usr/bin/scp
-  - /usr/bin/tee
-  - /usr/bin/touch
-  - /usr/bin/vim
-  - /usr/bin/vi
   - /usr/bin/dircolors
-  - /usr/bin/tput
-  - /usr/bin/free
-  - /usr/bin/top
   - /usr/bin/find
-  - bin: /usr/bin/which
-    l2chroot: false
-  - /usr/bin/id
-  - /usr/bin/whoami
+  - /usr/bin/free
   - /usr/bin/groups
+  - /usr/bin/head
+  - /usr/bin/id
   - /usr/bin/rsync
-  # Can also set mode, e.g. to setuid or set different permissions.
-  # - bin: /bin/ping
-  #   mode: 4755
+  - /usr/bin/scp
+  - /usr/bin/sort
+  - /usr/bin/ssh
+  - /usr/bin/tail
+  - /usr/bin/tee
+  - /usr/bin/top
+  - /usr/bin/touch
+  - /usr/bin/tput
+  - /usr/bin/tree
+  - /usr/bin/uniq
+  - /usr/bin/vi
+  - /usr/bin/vim
+  - /usr/bin/wc
+  - { bin: /usr/bin/which, l2chroot: false }
+  - /usr/bin/whoami
 
-ssh_chroot_l2chroot_template: l2chroot.j2
-ssh_chroot_l2chroot_path: /usr/local/bin/l2chroot
-
+# -----------------------------------------------------------------------------
+# Fichiers supplémentaires à copier dans les jails
+# -----------------------------------------------------------------------------
 ssh_chroot_copy_extra_items:
   - /etc/hosts
-  - /etc/passwd
-  - /etc/group
   - /etc/ld.so.cache
   - /etc/ld.so.conf
   - /etc/nsswitch.conf
 
-ssh_chroot_sshd_chroot_jail_config: |
-  Match group {{ ssh_chroot_jail_group_name }}
-      ChrootDirectory {{ ssh_chroot_jail_path }}
-      X11Forwarding no
-      AllowTcpForwarding no
+# -----------------------------------------------------------------------------
+# Script l2chroot (copie des librairies partagées)
+# -----------------------------------------------------------------------------
+ssh_chroot_l2chroot_template: l2chroot.j2
+ssh_chroot_l2chroot_path: /usr/local/bin/l2chroot
 
-ssh_chroot_jail_dirs_recurse: true
+# -----------------------------------------------------------------------------
+# Backup de la configuration originale
+# -----------------------------------------------------------------------------
+# Chemin de sauvegarde du sshd_config original
+ssh_chroot_backup_path: /etc/ssh/sshd_config.original.bak
 
+# =============================================================================
+# VARIABLES OBSOLÈTES (conservées pour rétrocompatibilité, à supprimer)
+# =============================================================================
+# Ces variables sont dépréciées et seront supprimées dans une version future
 
-
-sshd_sftpd_protocol:                      2
-sshd_sftpd_port:                          22
-sshd_sftpd_allow_agent_forwarding:        'no'
-sshd_sftpd_allow_stream_local_forwarding: 'no'
-sshd_sftpd_allow_tcp_forwarding:          'no'
-sshd_sftpd_loglevel:                      'VERBOSE'     # 'INFO'
-
-sshd_sftpd_maxauthtries:                  3
-sshd_sftpd_logingracetime:                30
-sshd_sftpd_maxstartups:                   '10:30:60'
-
-sshd_sftpd_ciphers:                       'chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com'
-sshd_sftpd_kexalgorithms:                 'curve25519-sha256@libssh.org,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512'
-sshd_sftpd_macs:                          'hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com'
-sshd_sftpd_hostkeyalgorithms:             'ssh-ed25519,rsa-sha2-512,rsa-sha2-256'
+# Ancienne configuration inline (remplacée par template sshd_config_jail.j2)
+# ssh_chroot_sshd_chroot_jail_config: |
+#   Match group {{ ssh_chroot_jail_group_name }}
+#       ChrootDirectory {{ ssh_chroot_jail_path }}
+#       X11Forwarding no
+#       AllowTcpForwarding no

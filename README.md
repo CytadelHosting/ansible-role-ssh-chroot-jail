@@ -1,145 +1,171 @@
-# Ansible Role: SSH chroot jail config
+# CytadelHosting.ssh-chroot-jail
 
-[![CI](https://github.com/geerlingguy/ansible-role-ssh-chroot-jail/workflows/CI/badge.svg?event=push)](https://github.com/geerlingguy/ansible-role-ssh-chroot-jail/actions?query=workflow%3ACI)
+Rôle Ansible pour gérer des comptes SSH/SFTP jailed avec isolation complète par utilisateur.
 
-Configures a chroot jail specifically for the purpose of limiting a set of SSH users to the jail. Useful if you have a server where you need to allow very limited access to a very limited amount of functionality.
+## Fonctionnalités
 
+- **Jails individuelles** : chaque utilisateur a sa propre jail dans `/jails/<username>/`
+- **Deux modes d'accès** :
+  - `sftpjail` : SFTP uniquement (ForceCommand internal-sftp)
+  - `sshjail` : Shell interactif dans la jail
+- **Binaires personnalisables** : liste globale + binaires additionnels par utilisateur
+- **Bind mounts** : montage de répertoires externes dans les jails
+- **Exceptions SSH** : configuration spécifique par utilisateur (tunneling, etc.)
+- **Gestion du cycle de vie** : création, mise à jour, archivage et suppression
 
-## Cytadel changes
+## Prérequis
 
-- fix broken SSH configuration
-- manage SSH authorized keys for jailed users
-- add option to remount bind a directory in the jail
+- Ansible >= 2.9
+- Debian/Ubuntu ou RedHat/CentOS
+- Systemd
 
-## Requirements
+## Variables principales
 
-Requires OpenSSH server. Doesn't require `geerlingguy.security`, but that role (or one like it) is highly recommended to help lock down your server as much as possible.
+### Configuration du service
 
-## Role Variables
+```yaml
+# Port d'écoute pour les comptes jailed (défaut: 22)
+sshd_jail_port: 22
 
-Available variables are listed below, along with default values (see `defaults/main.yml`):
+# Umask SFTP (défaut: 007 = rwxrwx---)
+sshd_jail_sftp_umask: '007'
 
-    ssh_chroot_jail_path: /var/jail
+# Chemin racine des jails
+ssh_chroot_jail_path: /jails
+```
 
-The path to the root of the chroot jail.
+### Définition des utilisateurs
 
-    ssh_chroot_jail_group_name: ssh_jailed
+```yaml
+ssh_chroot_jail_users:
+  # Exemple 1 : SFTP only (défaut)
+  - name: alice
+    home: /home_local/alice
+    allow_interactive: false          # false = SFTP only (défaut)
+    authorized_keys:
+      - 'files/ssh_keys/alice.pub'
+    bind_remounts:
+      - src_dir: '/var/www/alice_site'
+        mount_point: '/home_local/alice/www'
+        rw: yes
 
-The group into which jailed users should be added.
+  # Exemple 2 : Shell interactif
+  - name: bob
+    home: /home_local/bob
+    allow_interactive: true           # true = shell interactif dans la jail
+    authorized_keys:
+      - 'files/ssh_keys/bob.pub'
+    extra_bins:                       # binaires additionnels pour cet utilisateur
+      - /usr/bin/git
+      - /usr/bin/composer
 
-    ssh_chroot_jail_users:
-      - name: foo
-        home: /home/foo
-        shell: /bin/bash
+  # Exemple 3 : SFTP avec exceptions (tunnel MySQL)
+  - name: charlie
+    home: /home_local/charlie
+    ssh_match_options:
+      AllowTcpForwarding: 'yes'
+      PermitOpen: '127.0.0.1:3306'
 
-A list of users who should be in the chroot jail. Leave set to the default (`[]`) if you would like to manage users on your own.
+  # Exemple 4 : Suppression d'un utilisateur
+  - name: old_user
+    state: absent                     # déclenche archivage + suppression
+```
 
-    ssh_chroot_jail_dirs:
-      - bin
-      - dev
-      - etc
-      - lib
-      - lib64
-      - usr/bin
-      - usr/lib
-      - usr/lib64
-      - home
+### Binaires disponibles dans les jails
 
-Base directories that should exist in the jail.
+```yaml
+# Liste globale (tous les utilisateurs)
+ssh_chroot_bins:
+  - /bin/bash
+  - /bin/ls
+  - /usr/bin/vim
+  # ...
 
-    ssh_chroot_jail_devs:
-      - { dev: 'null', major: '1', minor: '3' }
-      - { dev: 'random', major: '5', minor: '0' }
-      - { dev: 'urandom', major: '1', minor: '5' }
-      - { dev: 'zero', major: '1', minor: '8' }
+# Forcer la resynchronisation des binaires (après mise à jour OS)
+ssh_chroot_jail_sync_bins: false
+```
 
-Devices that should exist in the jail.
+## Architecture
 
-    ssh_chroot_bins:
-      - /bin/cp
-      - /bin/sh
-      - /bin/bash
-      - /bin/ls
-      ...
-      - /usr/bin/tail
-      - /usr/bin/head
-      - /usr/bin/awk
-      - /usr/bin/wc
-      ...
-      - bin: /usr/bin/which
-        l2chroot: false
+### Service SSHD
 
-A list of binaries which should be copied over to the jail. Each binary will also have its library dependencies copied into the jail using the `l2chroot` script included with this role; you can skip that task by setting the `bin` key explicitly and setting `l2chroot: false` as in the last example above.
+Le rôle installe un service `sshd@jail` basé sur un template systemd :
+- Service : `/lib/systemd/system/sshd@.service`
+- Config : `/etc/ssh/sshd_config_jail`
+- Commandes : `systemctl restart sshd@jail`
 
-    ssh_chroot_l2chroot_template: l2chroot.j2
-    ssh_chroot_l2chroot_path: /usr/local/bin/l2chroot
+### Structure d'une jail
 
-The download URL and path into which `l2chroot` should be installed.
+```
+/jails/alice/
+├── bin/                    # Binaires (/bin/bash, /bin/ls, ...)
+├── dev/                    # Devices (null, zero, tty, random, urandom)
+├── etc/
+│   ├── passwd              # Minimal (root + alice)
+│   └── group               # Minimal
+├── home_local/alice/       # Home directory
+├── lib/, lib64/            # Librairies partagées
+├── tmp/                    # chmod 1777
+└── usr/bin/, usr/lib/      # Binaires et libs /usr
+```
 
-    ssh_chroot_copy_extra_items:
-      - /etc/hosts
-      - /etc/passwd
-      - /etc/group
-      - /etc/ld.so.cache
-      - /etc/ld.so.conf
-      - /etc/nsswitch.conf
+### Groupes système
 
-Extra items which should be copied into the jail.
+| Groupe | allow_interactive | Shell | Accès |
+|--------|-------------------|-------|-------|
+| `sftpjail` | `false` (défaut) | `/usr/sbin/nologin` | SFTP uniquement |
+| `sshjail` | `true` | `/bin/bash` | Shell interactif dans jail |
 
-    ssh_chroot_sshd_chroot_jail_config: |
-      Match group {{ ssh_chroot_jail_group_name }}
-          ChrootDirectory {{ ssh_chroot_jail_path }}
-          X11Forwarding no
-          AllowTcpForwarding no
+## Suppression d'un utilisateur
 
-Configuration to add to the server's `sshd_config` controlling how users in the chroot jail group are handled.
+Quand `state: absent` :
+1. Démontage des bind mounts
+2. Archivage : `/jails/<user>_<timestamp>.tar.gz`
+3. Suppression de l'utilisateur système
+4. Suppression du répertoire jail
 
-    ssh_chroot_jail_dirs_recurse: true
+## Exemples de playbook
 
-When adding jail directories, whether the directory addition should be done recursively or not. If you have many directories with thousands of files, and/or have the directories on a slow filesystem, this should be set to `false`.
+### Création simple
 
-## Dependencies
+```yaml
+- hosts: webservers
+  roles:
+    - role: CytadelHosting.ssh-chroot-jail
+      vars:
+        ssh_chroot_jail_users:
+          - name: webmaster
+            home: /home_local/webmaster
+            authorized_keys:
+              - 'files/ssh_keys/webmaster.pub'
+            bind_remounts:
+              - src_dir: '/var/www/html'
+                mount_point: '/home_local/webmaster/www'
+                rw: yes
+```
 
-None.
+### Mise à jour des binaires après upgrade OS
 
-## Example Playbook
+```yaml
+- hosts: webservers
+  roles:
+    - role: CytadelHosting.ssh-chroot-jail
+      vars:
+        ssh_chroot_jail_sync_bins: true
+```
 
-    - hosts: servers
-      become: yes
-      roles:
-        - geerlingguy.security
-        - geerlingguy.ssh-chroot-jail
+## Compatibilité
 
-*Inside `vars/main.yml`*:
+| OS | Version | Testé |
+|----|---------|-------|
+| Debian | 10, 11, 12 | ✓ |
+| Ubuntu | 20.04, 22.04 | ✓ |
+| Rocky Linux | 8, 9 | ✓ |
 
-    ssh_chroot_jail_users:
-      - name: janedoe
-        plain_password: {desired plain password}   # optionnal, must be defined as long as password_salt to be used
-        password_salt: {salt to encrypt password}
-        password: {encrypted_password}  # optionnal, backup password is plain_password is unused, if missing only SSH key authent is available
-        home: /home/janedoe
-        shell: /bin/bash
-        authorized_keys:
-          - {path to a SSH public key file}
-        bind_remounts:
-          - src_dir: '/srv/www/vhosts/covalab_mag2/shared/pub/media/'
-            mount_point: '/home/cvlb_lib_upload853/covalab_mag2_media/'  # optional, defaults to {{ ssh_chroot_jail_path }}{{ item.src_dir }}
-            rw: {yes|no}  # optional, default no
-            state: {present|absent|mounted|unmounted}  # optional, default mounted
+## Licence
 
-Precedence rules :
-* 1. plain_password + salt
-* 2. password
-* 3. no password auth
+MIT
 
-`plain_password` + `password_salt`: must be defined to compute an encrypted password with `{{ item.plain_password| password_hash('sha512', item.password_salt }}`
+## Auteur
 
-## License
-
-MIT (Expat) / BSD
-
-## Author Information
-
-This role was created in 2017 by [Jeff Geerling](https://www.jeffgeerling.com/), author of [Ansible for DevOps](https://www.ansiblefordevops.com/).
-
-Special thanks to [Acquia](https://www.acquia.com) for sponsoring the initial development of this role.
+CytadelHosting

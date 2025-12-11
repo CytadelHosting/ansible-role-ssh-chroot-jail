@@ -1,38 +1,146 @@
 ---
+# =============================================================================
+# Création d'une jail individuelle pour un utilisateur
+# =============================================================================
+# Variable attendue : jail_user (dictionnaire avec name, home, etc.)
+# Ce fichier est inclus depuis jail-user.yml pour chaque utilisateur
 
-- name: Ensure jail directories exist.
-  file:  # noqa 208
-    path: "{{ ssh_chroot_jail_path }}/{{ item }}"
+# -----------------------------------------------------------------------------
+# Création de l'arborescence de la jail
+# -----------------------------------------------------------------------------
+- name: "{{ jail_user.name }} | Create jail root directory"
+  file:
+    path: "{{ ssh_chroot_jail_path }}/{{ jail_user.name }}"
+    owner: root
+    group: root
+    mode: '0755'
+    state: directory
+
+- name: "{{ jail_user.name }} | Create jail subdirectories"
+  file:
+    path: "{{ ssh_chroot_jail_path }}/{{ jail_user.name }}/{{ item }}"
     state: directory
     recurse: "{{ ssh_chroot_jail_dirs_recurse }}"
-  with_items: "{{ ssh_chroot_jail_dirs }}"
+  loop: "{{ ssh_chroot_jail_dirs }}"
 
-- name: Ensure jail devices exist.
-  command: mknod -m 0666 {{ ssh_chroot_jail_path }}/dev/{{ item.dev }} {{ item.type | default('c') }} {{ item.major }} {{ item.minor }}
+- name: "{{ jail_user.name }} | Set tmp directory permissions (sticky bit)"
+  file:
+    path: "{{ ssh_chroot_jail_path }}/{{ jail_user.name }}/tmp"
+    mode: '1777'
+    state: directory
+
+# -----------------------------------------------------------------------------
+# Création des devices dans la jail
+# -----------------------------------------------------------------------------
+- name: "{{ jail_user.name }} | Create jail devices"
+  command: >
+    mknod -m 0666 
+    {{ ssh_chroot_jail_path }}/{{ jail_user.name }}/dev/{{ item.dev }} 
+    {{ item.type | default('c') }} 
+    {{ item.major }} 
+    {{ item.minor }}
   args:
-    creates: "{{ ssh_chroot_jail_path }}/dev/{{ item.dev }}"
-  with_items: "{{ ssh_chroot_jail_devs }}"
+    creates: "{{ ssh_chroot_jail_path }}/{{ jail_user.name }}/dev/{{ item.dev }}"
+  loop: "{{ ssh_chroot_jail_devs }}"
 
-- name: Ensure jail devices get created after reboot
-  template:
-    src: ssh-chroot.conf.j2
-    dest: "{{ ssh_chroot_tmpfiles_conf_path }}"
-  when: "ansible_service_mgr == 'systemd'"
+# -----------------------------------------------------------------------------
+# Copie des binaires et leurs librairies
+# -----------------------------------------------------------------------------
+- name: "{{ jail_user.name }} | Compute full binary list (global + user extra)"
+  set_fact:
+    _jail_bins: "{{ ssh_chroot_bins + (jail_user.extra_bins | default([])) }}"
 
-- name: Ensure l2chroot is installed.
-  template:
-    src: "{{ ssh_chroot_l2chroot_template }}"
-    dest: "{{ ssh_chroot_l2chroot_path }}"
-    mode: 0755
-
-- name: Ensure binaries are copied into the jail.
+- name: "{{ jail_user.name }} | Copy binaries into jail"
   copy:
     src: "{{ item.bin | default(item) }}"
-    dest: "{{ ssh_chroot_jail_path }}{{ item.bin | default(item) }}"
+    dest: "{{ ssh_chroot_jail_path }}/{{ jail_user.name }}{{ item.bin | default(item) }}"
     remote_src: true
     mode: "{{ item.mode | default('0755') }}"
-  with_items: "{{ ssh_chroot_bins }}"
-  notify:
-    - copy ssh-chroot-jail extra items
-    - add binary libs via l2chroot
-    - copy extra libraries for whoami
+  loop: "{{ _jail_bins }}"
+  register: bins_copied
+
+- name: "{{ jail_user.name }} | Copy binary libraries via l2chroot"
+  command: "{{ ssh_chroot_l2chroot_path }} {{ item.bin | default(item) }}"
+  environment:
+    BASE: "{{ ssh_chroot_jail_path }}/{{ jail_user.name }}"
+  when: item.l2chroot is not defined or item.l2chroot
+  loop: "{{ _jail_bins }}"
+  changed_when: false
+
+# -----------------------------------------------------------------------------
+# Copie des fichiers supplémentaires
+# -----------------------------------------------------------------------------
+- name: "{{ jail_user.name }} | Copy extra items into jail"
+  copy:
+    src: "{{ item }}"
+    dest: "{{ ssh_chroot_jail_path }}/{{ jail_user.name }}{{ item }}"
+    remote_src: true
+  loop: "{{ ssh_chroot_copy_extra_items }}"
+  failed_when: false
+
+# -----------------------------------------------------------------------------
+# Support terminal (terminfo)
+# -----------------------------------------------------------------------------
+- name: "{{ jail_user.name }} | Copy terminfo for terminal support"
+  shell: "cp -a {{ item }} {{ ssh_chroot_jail_path }}/{{ jail_user.name }}{{ item }}"
+  args:
+    creates: "{{ ssh_chroot_jail_path }}/{{ jail_user.name }}{{ item }}"
+  loop: "{{ terminfo_paths }}"
+  failed_when: false
+
+# -----------------------------------------------------------------------------
+# Librairies NSS (résolution passwd/group/hosts)
+# -----------------------------------------------------------------------------
+- name: "{{ jail_user.name }} | Ensure NSS lib directory exists in jail"
+  file:
+    path: "{{ ssh_chroot_jail_path }}/{{ jail_user.name }}{{ nss_lib_path }}"
+    state: directory
+
+- name: "{{ jail_user.name }} | Copy NSS libraries into jail"
+  copy:
+    src: "{{ nss_lib_path }}/{{ item }}"
+    dest: "{{ ssh_chroot_jail_path }}/{{ jail_user.name }}{{ nss_lib_path }}/{{ item }}"
+    remote_src: true
+  loop: "{{ nss_libs }}"
+  failed_when: false
+
+# -----------------------------------------------------------------------------
+# Fichiers /etc minimaux dans la jail
+# -----------------------------------------------------------------------------
+- name: "{{ jail_user.name }} | Create minimal /etc/passwd in jail"
+  copy:
+    content: |
+      root:x:0:0:root:/root:/bin/bash
+      {{ jail_user.name }}:x:{{ jail_user_info.uid }}:{{ jail_user_info.group }}:{{ jail_user.name }}:{{ jail_user.home }}:{{ _user_shell }}
+    dest: "{{ ssh_chroot_jail_path }}/{{ jail_user.name }}/etc/passwd"
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: "{{ jail_user.name }} | Create minimal /etc/group in jail"
+  copy:
+    content: |
+      root:x:0:
+      {{ _user_group_name }}:x:{{ jail_user_info.group }}:
+    dest: "{{ ssh_chroot_jail_path }}/{{ jail_user.name }}/etc/group"
+    owner: root
+    group: root
+    mode: '0644'
+
+# -----------------------------------------------------------------------------
+# Home directory dans la jail
+# -----------------------------------------------------------------------------
+- name: "{{ jail_user.name }} | Create home directory in jail"
+  file:
+    path: "{{ ssh_chroot_jail_path }}/{{ jail_user.name }}{{ jail_user.home }}"
+    state: directory
+    owner: "{{ jail_user.name }}"
+    group: "{{ jail_user.group | default(jail_user.name) }}"
+    mode: '0755'
+
+- name: "{{ jail_user.name }} | Copy skeleton files to jail home"
+  command: "cp -r -n /etc/skel/. {{ ssh_chroot_jail_path }}/{{ jail_user.name }}{{ jail_user.home }}"
+  become: true
+  become_user: "{{ jail_user.name }}"
+  failed_when: false
+  changed_when: false

@@ -1,43 +1,50 @@
 ---
+# =============================================================================
+# Installation du service SSHD jail (sshd@jail)
+# =============================================================================
 
-
-#- name: Ensure SSHD config contains correct SFTP configuration
-#  lineinfile:
-#    path: /etc/ssh/sshd_config
-#    regexp: 'Subsystem\s+sftp'
-#    line: 'Subsystem sftp internal-sftp -u 002'
-#  notify: restart sshd-sftp daemon
-
-#- name: Ensure SSHD config contains jail configuration.
-#  blockinfile:
-#    path: /etc/ssh/sshd_config
-#    block: "{{ ssh_chroot_sshd_chroot_jail_config }}"
-#    insertafter: EOF
-#  notify: restart sshd-sftp daemon
-
-
-
-- name: manage sshd_sftp_config configuration file
-  template:
-    src: sshd_sftp_config.j2 
-    dest: "/etc/ssh/sshd_sftp_config"
+# -----------------------------------------------------------------------------
+# Installation du service template systemd
+# -----------------------------------------------------------------------------
+- name: Copy sshd@ service template to /lib/systemd/system/
+  copy:
+    src: sshd@.service
+    dest: /lib/systemd/system/sshd@.service
     owner: root
     group: root
-    mode: 0600
-  notify: restart sshd-sftp daemon
+    mode: '0644'
+  notify:
+    - reload systemd daemon
+    - restart sshd jail daemon
 
+- name: Create symlink in /etc/systemd/system/
+  file:
+    src: /lib/systemd/system/sshd@.service
+    dest: /etc/systemd/system/sshd@.service
+    state: link
+  notify:
+    - reload systemd daemon
 
-- name: manage php-fpm systemd service scripts
+# -----------------------------------------------------------------------------
+# Configuration SSHD pour jail
+# -----------------------------------------------------------------------------
+- name: Deploy sshd_config for jail service
   template:
-    src: sshd-sftp.service.j2
-    dest: "/etc/systemd/system/sshd-sftp.service"
+    src: sshd_config_jail.j2
+    dest: "/etc/ssh/sshd_config_{{ ssh_chroot_service_name }}"
     owner: root
     group: root
-    mode: 0600
-  #register: fpm_systemd_modified
-  notify: restart sshd-sftp daemon
+    mode: '0600'
+    validate: '/usr/sbin/sshd -t -f %s'
+  notify:
+    - restart sshd jail daemon
 
-
-- name: just force systemd to reread configs (2.4 and above)
+# -----------------------------------------------------------------------------
+# Activation et démarrage du service
+# -----------------------------------------------------------------------------
+- name: Ensure sshd@jail service is enabled and started
   systemd:
-    daemon_reload: yes
+    name: "{{ sshd_jail_daemon }}"
+    enabled: true
+    state: started
+    daemon_reload: true
