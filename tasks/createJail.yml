@@ -58,6 +58,7 @@
     mode: "{{ item.mode | default('0755') }}"
   loop: "{{ _jail_bins }}"
   register: bins_copied
+  ignore_errors: '{{ ansible_check_mode }}'
 
 - name: "{{ jail_user.name }} | Copy binary libraries via l2chroot"
   command: "{{ ssh_chroot_l2chroot_path }} {{ item.bin | default(item) }}"
@@ -66,6 +67,7 @@
   when: item.l2chroot is not defined or item.l2chroot
   loop: "{{ _jail_bins }}"
   changed_when: false
+  ignore_errors: '{{ ansible_check_mode }}'
 
 # -----------------------------------------------------------------------------
 # Copie des fichiers supplémentaires
@@ -77,6 +79,7 @@
     remote_src: true
   loop: "{{ ssh_chroot_copy_extra_items }}"
   failed_when: false
+  ignore_errors: '{{ ansible_check_mode }}'
 
 # -----------------------------------------------------------------------------
 # Support terminal (terminfo)

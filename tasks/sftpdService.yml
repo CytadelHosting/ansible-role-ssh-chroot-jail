@@ -24,6 +24,7 @@
     state: link
   notify:
     - reload systemd daemon
+  ignore_errors: '{{ ansible_check_mode }}'
 
 # -----------------------------------------------------------------------------
 # Configuration SSHD pour jail
