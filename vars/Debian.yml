@@ -4,7 +4,7 @@
 # =============================================================================
 
 # Nom du service SSHD jail (utilisé par les handlers)
-sshd_jail_daemon: 'sshd@jail2'
+sshd_jail_daemon: 'sshd@jail'
 
 # Chemin des librairies 64-bit
 lib64_path: /lib/x86_64-linux-gnu
