@@ -10,7 +10,8 @@
 #     authorized_keys: [...]
 #     extra_bins: []
 #     bind_remounts: [...]
-#     ssh_match_options: {}
+#     sshd_user_options:
+#       - "AllowTcpForwarding yes"
 
 # -----------------------------------------------------------------------------
 # Calcul du shell et du groupe en fonction de allow_interactive

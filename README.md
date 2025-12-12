@@ -63,9 +63,9 @@ ssh_chroot_jail_users:
   # Exemple 3 : SFTP avec exceptions (tunnel MySQL)
   - name: charlie
     home: /home_local/charlie
-    ssh_match_options:
-      AllowTcpForwarding: 'yes'
-      PermitOpen: '127.0.0.1:3306'
+    sshd_user_options:
+      - 'AllowTcpForwarding yes'
+      - 'PermitOpen 127.0.0.1:3306'
 
   # Exemple 4 : Suppression d'un utilisateur
   - name: old_user

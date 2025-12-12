@@ -30,9 +30,9 @@
         home: /home_local/charlie
         allow_interactive: false
         authorized_keys: []
-        ssh_match_options:
-          AllowTcpForwarding: 'yes'
-          PermitOpen: '127.0.0.1:3306'
+        sshd_user_options:
+          - "AllowTcpForwarding yes"
+          - "PermitOpen 127.0.0.1:3306"
 
   roles:
     - role: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') | basename }}"

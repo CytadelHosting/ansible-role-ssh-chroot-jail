@@ -95,16 +95,18 @@ Match Group {{ sftp_chroot_jail_group_name }}
     AllowTcpForwarding no
 
 # ===========================
-# === EXCEPTIONS USERS    ===
+# === OPTIONS PAR USER    ===
 # ===========================
+# Ces blocs Match User permettent d'override les paramètres définis par Match Group
 {% for user in ssh_chroot_jail_users %}
-{% if user.ssh_match_options is defined and user.ssh_match_options | length > 0 %}
+{% set user_options = user.sshd_user_options | default([]) %}
+{% if user_options | length > 0 %}
 {% if (user.state | default('present')) == 'present' %}
 
-# Exception pour {{ user.name }}
+# Options spécifiques pour {{ user.name }}
 Match User {{ user.name }}
-{% for option, value in user.ssh_match_options.items() %}
-    {{ option }} {{ value }}
+{% for line in user_options %}
+    {{ line }}
 {% endfor %}
 {% endif %}
 {% endif %}
