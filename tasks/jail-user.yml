@@ -107,16 +107,26 @@
 # -----------------------------------------------------------------------------
 # Configuration des bind mounts
 # -----------------------------------------------------------------------------
+# Vérifier quels mount points sont déjà montés (pour éviter les erreurs sur fs ro)
+- name: "{{ jail_user.name }} | Check existing mounts"
+  shell: "mount | grep -q '{{ ssh_chroot_jail_path }}/{{ jail_user.name }}{{ bind.mount_point | default(bind.src_dir) }}' && echo 'mounted' || echo 'not_mounted'"
+  loop: "{{ jail_user.bind_remounts | default([]) }}"
+  loop_control:
+    loop_var: bind
+  register: _mount_check
+  changed_when: false
+  failed_when: false
+
+# Créer les répertoires de mount point SEULEMENT s'ils ne sont pas déjà montés
 - name: "{{ jail_user.name }} | Ensure bind mount directories exist in jail"
   file:
-    path: "{{ ssh_chroot_jail_path }}/{{ jail_user.name }}{{ bind.mount_point | default(bind.src_dir) }}"
+    path: "{{ ssh_chroot_jail_path }}/{{ jail_user.name }}{{ item.bind.mount_point | default(item.bind.src_dir) }}"
     state: directory
     owner: "{{ jail_user.name }}"
     group: "{{ jail_user.group | default(jail_user.name) }}"
     mode: '0755'
-  loop: "{{ jail_user.bind_remounts | default([]) }}"
-  loop_control:
-    loop_var: bind
+  loop: "{{ _mount_check.results }}"
+  when: item.stdout == 'not_mounted'
 
 - name: "{{ jail_user.name }} | Mount bind directories"
   mount:
