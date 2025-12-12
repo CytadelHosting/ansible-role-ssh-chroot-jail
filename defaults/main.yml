@@ -74,10 +74,17 @@ sshd_jail_login_grace_time: 30
 sshd_jail_max_startups: '10:30:60'
 
 # Algorithmes cryptographiques (configuration moderne et sécurisée)
-sshd_jail_ciphers: 'chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com'
-sshd_jail_kex_algorithms: 'curve25519-sha256@libssh.org,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512'
-sshd_jail_macs: 'hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com'
-sshd_jail_host_key_algorithms: 'ssh-ed25519,rsa-sha2-512,rsa-sha2-256'
+# Référence : https://infosec.mozilla.org/guidelines/openssh
+#
+# Ces algorithmes sont compatibles avec OpenSSH 7.4+ (Debian 10+, RHEL 8+)
+# et offrent un bon équilibre sécurité/compatibilité.
+#
+# Note : curve25519-sha256 et curve25519-sha256@libssh.org sont identiques,
+#        on inclut les deux pour compatibilité maximale.
+sshd_jail_ciphers: 'chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr'
+sshd_jail_kex_algorithms: 'curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512,diffie-hellman-group-exchange-sha256'
+sshd_jail_macs: 'hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,umac-128-etm@openssh.com,hmac-sha2-512,hmac-sha2-256'
+sshd_jail_host_key_algorithms: 'ssh-ed25519,ssh-ed25519-cert-v01@openssh.com,rsa-sha2-512,rsa-sha2-256'
 
 # Logging
 sshd_jail_log_level: 'VERBOSE'

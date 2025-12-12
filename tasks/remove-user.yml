@@ -48,6 +48,40 @@
     - mounted_points.stdout_lines | default([]) | length > 0
 
 # -----------------------------------------------------------------------------
+# Suppression des ACL sur les dossiers sources des bind mounts
+# -----------------------------------------------------------------------------
+- name: "{{ jail_user.name }} | Remove ACL from bind mount source directories"
+  acl:
+    path: "{{ bind.src_dir }}"
+    entity: "{{ jail_user.name }}"
+    etype: user
+    state: absent
+    recursive: true
+  loop: "{{ jail_user.bind_remounts | default([]) }}"
+  loop_control:
+    loop_var: bind
+  when:
+    - jail_user.bind_remounts is defined
+    - bind.rw | default(false)
+  failed_when: false
+
+- name: "{{ jail_user.name }} | Remove default ACL from bind mount source directories"
+  acl:
+    path: "{{ bind.src_dir }}"
+    entity: "{{ jail_user.name }}"
+    etype: user
+    default: true
+    state: absent
+    recursive: true
+  loop: "{{ jail_user.bind_remounts | default([]) }}"
+  loop_control:
+    loop_var: bind
+  when:
+    - jail_user.bind_remounts is defined
+    - bind.rw | default(false)
+  failed_when: false
+
+# -----------------------------------------------------------------------------
 # Archivage de la jail
 # -----------------------------------------------------------------------------
 - name: "{{ jail_user.name }} | Generate archive filename with timestamp"

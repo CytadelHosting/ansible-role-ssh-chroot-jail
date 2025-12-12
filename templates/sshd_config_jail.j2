@@ -16,7 +16,16 @@ Port {{ sshd_jail_port }}
 #ListenAddress ::
 
 PermitRootLogin {{ sshd_jail_permit_root_login }}
+
+# ChallengeResponseAuthentication est déprécié depuis OpenSSH 8.7
+# Utiliser KbdInteractiveAuthentication sur les systèmes récents
+{% if ansible_os_family == 'RedHat' and ansible_distribution_major_version | int >= 9 %}
+KbdInteractiveAuthentication {{ sshd_jail_kbd_interactive_authentication | default(sshd_jail_challenge_response_authentication) }}
+{% elif ansible_os_family == 'Debian' and ansible_distribution_major_version | int >= 12 %}
+KbdInteractiveAuthentication {{ sshd_jail_kbd_interactive_authentication | default(sshd_jail_challenge_response_authentication) }}
+{% else %}
 ChallengeResponseAuthentication {{ sshd_jail_challenge_response_authentication }}
+{% endif %}
 
 UsePAM {{ sshd_jail_use_pam }}
 PasswordAuthentication {{ sshd_jail_password_authentication }}
@@ -49,7 +58,9 @@ HostKeyAlgorithms {{ sshd_jail_host_key_algorithms }}
 
 # Banner
 Banner none
+{% if ansible_os_family == 'Debian' %}
 DebianBanner no
+{% endif %}
 
 # Allow client to pass locale environment variables
 AcceptEnv LANG LC_*
