@@ -3,33 +3,53 @@
 # Synchronisation des binaires dans toutes les jails existantes
 # =============================================================================
 # Ce fichier est exécuté quand ssh_chroot_jail_sync_bins: true
-# Il met à jour les binaires et librairies dans toutes les jails existantes
+# Il reconstruit /jails/base et resynchronise vers toutes les jails utilisateurs
 # Utile après une mise à jour de l'OS ou ajout de nouveaux binaires
 
+- name: Display sync message
+  debug:
+    msg: "Resynchronisation des binaires demandée (ssh_chroot_jail_sync_bins: true)"
+
 # -----------------------------------------------------------------------------
-# Récupération de la liste des jails existantes
+# Reconstruction de /jails/base
 # -----------------------------------------------------------------------------
-- name: Get list of existing jails
+# Le flag ssh_chroot_jail_sync_bins est déjà passé à build-base-jail.yml
+# qui va forcer la reconstruction
+
+# -----------------------------------------------------------------------------
+# Récupération de la liste des jails utilisateurs existantes
+# -----------------------------------------------------------------------------
+- name: Get list of existing user jails
   find:
     paths: "{{ ssh_chroot_jail_path }}"
     file_type: directory
     recurse: false
   register: existing_jails
 
-- name: Filter out archive files and special directories
+- name: Filter out base jail and archive files
   set_fact:
-    _jail_dirs: "{{ existing_jails.files | map(attribute='path') | map('basename') | reject('match', '^base$') | reject('match', '.*\\.tar\\.gz$') | list }}"
+    _user_jails: "{{ existing_jails.files | map(attribute='path') | map('basename') | reject('match', '^base$') | reject('match', '.*\\.tar\\.gz$') | list }}"
 
 - name: Display jails to synchronize
   debug:
-    msg: "Jails à synchroniser : {{ _jail_dirs }}"
+    msg: "Jails utilisateurs à synchroniser : {{ _user_jails }}"
 
 # -----------------------------------------------------------------------------
-# Synchronisation pour chaque jail
+# Resync depuis /jails/base vers chaque jail utilisateur
 # -----------------------------------------------------------------------------
-- name: Synchronize binaries for each jail
-  include_tasks: sync-bins-jail.yml
-  loop: "{{ _jail_dirs }}"
-  loop_control:
-    loop_var: _jail_name
+- name: Resync binaries from base jail to user jails
+  shell: |
+    rsync -a \
+      --exclude='etc/passwd' \
+      --exclude='etc/group' \
+      --exclude='home' \
+      --exclude='home_local' \
+      {{ ssh_chroot_jail_path }}/base/ \
+      {{ ssh_chroot_jail_path }}/{{ item }}/
+  loop: "{{ _user_jails }}"
+  when: _user_jails | length > 0
+  changed_when: true
 
+- name: Sync complete
+  debug:
+    msg: "Synchronisation terminée pour {{ _user_jails | length }} jail(s)"

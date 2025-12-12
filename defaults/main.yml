@@ -117,9 +117,9 @@ ssh_chroot_jail_users: []
 # -----------------------------------------------------------------------------
 # Synchronisation des binaires
 # -----------------------------------------------------------------------------
-# Forcer la resynchronisation de tous les binaires dans toutes les jails
+# Forcer la reconstruction de /jails/base et resync vers toutes les jails
 # Utile après une mise à jour de l'OS ou ajout de binaires à la liste
-# ATTENTION : opération coûteuse, laisser à false en temps normal
+# Note : /jails/base est construit une fois, puis copié via rsync vers chaque jail
 ssh_chroot_jail_sync_bins: false
 
 # -----------------------------------------------------------------------------

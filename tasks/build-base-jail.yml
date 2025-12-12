@@ -1,0 +1,126 @@
+---
+# =============================================================================
+# Construction de la jail de base /jails/base
+# =============================================================================
+# Cette jail contient tous les binaires et librairies communs.
+# Elle sert de template pour créer rapidement les jails utilisateurs via rsync.
+
+- name: Check if base jail needs rebuild
+  stat:
+    path: "{{ ssh_chroot_jail_path }}/base/.build_complete"
+  register: base_jail_marker
+
+# On rebuild si le marker n'existe pas OU si ssh_chroot_jail_sync_bins est true
+- name: Set rebuild flag
+  set_fact:
+    _rebuild_base_jail: "{{ not base_jail_marker.stat.exists or (ssh_chroot_jail_sync_bins | default(false)) }}"
+
+- name: Display base jail status
+  debug:
+    msg: "{{ 'Reconstruction de /jails/base' if _rebuild_base_jail else '/jails/base déjà construit (skip)' }}"
+
+# -----------------------------------------------------------------------------
+# Création de l'arborescence de base
+# -----------------------------------------------------------------------------
+- name: Create base jail root directory
+  file:
+    path: "{{ ssh_chroot_jail_path }}/base"
+    owner: root
+    group: root
+    mode: '0755'
+    state: directory
+
+- name: Create base jail subdirectories
+  file:
+    path: "{{ ssh_chroot_jail_path }}/base/{{ item }}"
+    state: directory
+  loop: "{{ ssh_chroot_jail_dirs }}"
+  when: _rebuild_base_jail
+
+- name: Set base jail tmp directory permissions (sticky bit)
+  file:
+    path: "{{ ssh_chroot_jail_path }}/base/tmp"
+    mode: '1777'
+    state: directory
+  when: _rebuild_base_jail
+
+# -----------------------------------------------------------------------------
+# Copie des binaires globaux et leurs librairies
+# -----------------------------------------------------------------------------
+- name: Copy binaries into base jail
+  copy:
+    src: "{{ item.bin | default(item) }}"
+    dest: "{{ ssh_chroot_jail_path }}/base{{ item.bin | default(item) }}"
+    remote_src: true
+    mode: "{{ item.mode | default('0755') }}"
+  loop: "{{ ssh_chroot_bins }}"
+  when: _rebuild_base_jail
+  ignore_errors: '{{ ansible_check_mode }}'
+
+- name: Copy binary libraries via l2chroot
+  command: "{{ ssh_chroot_l2chroot_path }} {{ item.bin | default(item) }}"
+  environment:
+    BASE: "{{ ssh_chroot_jail_path }}/base"
+  when:
+    - _rebuild_base_jail
+    - item.l2chroot is not defined or item.l2chroot
+  loop: "{{ ssh_chroot_bins }}"
+  changed_when: false
+  ignore_errors: '{{ ansible_check_mode }}'
+
+# -----------------------------------------------------------------------------
+# Copie des fichiers supplémentaires
+# -----------------------------------------------------------------------------
+- name: Copy extra items into base jail
+  copy:
+    src: "{{ item }}"
+    dest: "{{ ssh_chroot_jail_path }}/base{{ item }}"
+    remote_src: true
+  loop: "{{ ssh_chroot_copy_extra_items }}"
+  when: _rebuild_base_jail
+  failed_when: false
+  ignore_errors: '{{ ansible_check_mode }}'
+
+# -----------------------------------------------------------------------------
+# Support terminal (terminfo)
+# -----------------------------------------------------------------------------
+- name: Copy terminfo for terminal support
+  shell: "cp -a {{ item }} {{ ssh_chroot_jail_path }}/base{{ item }}"
+  args:
+    creates: "{{ ssh_chroot_jail_path }}/base{{ item }}"
+  loop: "{{ terminfo_paths }}"
+  when: _rebuild_base_jail
+  failed_when: false
+
+# -----------------------------------------------------------------------------
+# Librairies NSS (résolution passwd/group/hosts)
+# -----------------------------------------------------------------------------
+- name: Ensure NSS lib directory exists in base jail
+  file:
+    path: "{{ ssh_chroot_jail_path }}/base{{ nss_lib_path }}"
+    state: directory
+  when: _rebuild_base_jail
+
+- name: Copy NSS libraries into base jail
+  copy:
+    src: "{{ nss_lib_path }}/{{ item }}"
+    dest: "{{ ssh_chroot_jail_path }}/base{{ nss_lib_path }}/{{ item }}"
+    remote_src: true
+  loop: "{{ nss_libs }}"
+  when: _rebuild_base_jail
+  failed_when: false
+
+# -----------------------------------------------------------------------------
+# Marker de fin de build
+# -----------------------------------------------------------------------------
+- name: Create build completion marker
+  copy:
+    content: |
+      Build completed: {{ ansible_date_time.iso8601 }}
+      Binaries: {{ ssh_chroot_bins | length }}
+    dest: "{{ ssh_chroot_jail_path }}/base/.build_complete"
+    owner: root
+    group: root
+    mode: '0644'
+  when: _rebuild_base_jail
+

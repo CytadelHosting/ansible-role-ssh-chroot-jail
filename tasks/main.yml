@@ -56,10 +56,11 @@
     state: directory
 
 # -----------------------------------------------------------------------------
-# Synchronisation globale des binaires (si demandée)
+# Construction de la jail de base (optimisation)
 # -----------------------------------------------------------------------------
-- import_tasks: sync-bins.yml
-  when: ssh_chroot_jail_sync_bins | bool
+# /jails/base contient tous les binaires communs, copiés une seule fois
+# Les jails utilisateurs sont ensuite créées par rsync depuis /jails/base
+- import_tasks: build-base-jail.yml
 
 # -----------------------------------------------------------------------------
 # Gestion des utilisateurs jailed
