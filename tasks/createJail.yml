@@ -16,11 +16,11 @@
     mode: '0755'
     state: directory
 
+# Note: PAS de recurse ici pour éviter de suivre les bind mounts existants
 - name: "{{ jail_user.name }} | Create jail subdirectories"
   file:
     path: "{{ ssh_chroot_jail_path }}/{{ jail_user.name }}/{{ item }}"
     state: directory
-    recurse: "{{ ssh_chroot_jail_dirs_recurse }}"
   loop: "{{ ssh_chroot_jail_dirs }}"
 
 - name: "{{ jail_user.name }} | Set tmp directory permissions (sticky bit)"
@@ -108,23 +108,85 @@
   failed_when: false
 
 # -----------------------------------------------------------------------------
-# Fichiers /etc minimaux dans la jail
+# Fichiers /etc minimaux dans la jail (avec owners des bind mounts)
 # -----------------------------------------------------------------------------
-- name: "{{ jail_user.name }} | Create minimal /etc/passwd in jail"
-  copy:
-    content: |
+# Récupérer les infos des owners/groups des dossiers sources des bind mounts
+- name: "{{ jail_user.name }} | Get bind mount source directories info"
+  stat:
+    path: "{{ bind.src_dir }}"
+  loop: "{{ jail_user.bind_remounts | default([]) }}"
+  loop_control:
+    loop_var: bind
+  register: bind_stats
+  when: jail_user.bind_remounts is defined
+
+# Construire la liste des uid/gid uniques des bind mounts
+- name: "{{ jail_user.name }} | Build list of bind mount owners"
+  set_fact:
+    _bind_owners: "{{ bind_stats.results | default([]) | selectattr('stat', 'defined') | map(attribute='stat') | list }}"
+  when: jail_user.bind_remounts is defined
+
+- name: "{{ jail_user.name }} | Get owner names for bind mounts"
+  shell: "getent passwd {{ item.uid }} | cut -d: -f1,3,4,6,7"
+  loop: "{{ _bind_owners | default([]) }}"
+  register: bind_owner_names
+  changed_when: false
+  failed_when: false
+  when: 
+    - _bind_owners is defined
+    - _bind_owners | length > 0
+
+- name: "{{ jail_user.name }} | Get group names for bind mounts"
+  shell: "getent group {{ item.gid }} | cut -d: -f1,3"
+  loop: "{{ _bind_owners | default([]) }}"
+  register: bind_group_names
+  changed_when: false
+  failed_when: false
+  when:
+    - _bind_owners is defined
+    - _bind_owners | length > 0
+
+# Générer /etc/passwd avec root + user jail + owners des bind mounts
+- name: "{{ jail_user.name }} | Generate /etc/passwd content"
+  set_fact:
+    _jail_passwd_content: |
       root:x:0:0:root:/root:/bin/bash
       {{ jail_user.name }}:x:{{ jail_user_info.uid }}:{{ jail_user_info.group }}:{{ jail_user.name }}:{{ jail_user.home }}:{{ _user_shell }}
+      {% for result in bind_owner_names.results | default([]) %}
+      {% if result.stdout is defined and result.stdout != '' %}
+      {% set parts = result.stdout.split(':') %}
+      {% if parts[0] != jail_user.name and parts[0] != 'root' %}
+      {{ parts[0] }}:x:{{ parts[1] }}:{{ parts[2] }}:{{ parts[0] }}:{{ parts[3] | default('/nonexistent') }}:{{ parts[4] | default('/usr/sbin/nologin') }}
+      {% endif %}
+      {% endif %}
+      {% endfor %}
+
+- name: "{{ jail_user.name }} | Create /etc/passwd in jail"
+  copy:
+    content: "{{ _jail_passwd_content }}"
     dest: "{{ ssh_chroot_jail_path }}/{{ jail_user.name }}/etc/passwd"
     owner: root
     group: root
     mode: '0644'
 
-- name: "{{ jail_user.name }} | Create minimal /etc/group in jail"
-  copy:
-    content: |
+# Générer /etc/group avec root + user group + groups des bind mounts
+- name: "{{ jail_user.name }} | Generate /etc/group content"
+  set_fact:
+    _jail_group_content: |
       root:x:0:
       {{ _user_group_name }}:x:{{ jail_user_info.group }}:
+      {% for result in bind_group_names.results | default([]) %}
+      {% if result.stdout is defined and result.stdout != '' %}
+      {% set parts = result.stdout.split(':') %}
+      {% if parts[1] != jail_user_info.group and parts[1] != '0' %}
+      {{ parts[0] }}:x:{{ parts[1] }}:
+      {% endif %}
+      {% endif %}
+      {% endfor %}
+
+- name: "{{ jail_user.name }} | Create /etc/group in jail"
+  copy:
+    content: "{{ _jail_group_content }}"
     dest: "{{ ssh_chroot_jail_path }}/{{ jail_user.name }}/etc/group"
     owner: root
     group: root

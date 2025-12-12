@@ -128,3 +128,40 @@
   loop: "{{ jail_user.bind_remounts | default([]) }}"
   loop_control:
     loop_var: bind
+
+# -----------------------------------------------------------------------------
+# Configuration des ACL pour les bind mounts en écriture
+# -----------------------------------------------------------------------------
+# Applique les ACL sur le dossier SOURCE pour permettre à l'utilisateur jailed
+# d'écrire dans les bind mounts configurés en rw
+- name: "{{ jail_user.name }} | Set ACL on bind mount source directories (rwX)"
+  acl:
+    path: "{{ bind.src_dir }}"
+    entity: "{{ jail_user.name }}"
+    etype: user
+    permissions: rwX
+    recursive: true
+    state: present
+  loop: "{{ jail_user.bind_remounts | default([]) }}"
+  loop_control:
+    loop_var: bind
+  when:
+    - bind.rw | default(false)
+    - bind.state | default('mounted') != 'absent'
+
+# ACL par défaut pour les nouveaux fichiers/dossiers créés
+- name: "{{ jail_user.name }} | Set default ACL on bind mount source directories"
+  acl:
+    path: "{{ bind.src_dir }}"
+    entity: "{{ jail_user.name }}"
+    etype: user
+    permissions: rwX
+    default: true
+    recursive: true
+    state: present
+  loop: "{{ jail_user.bind_remounts | default([]) }}"
+  loop_control:
+    loop_var: bind
+  when:
+    - bind.rw | default(false)
+    - bind.state | default('mounted') != 'absent'

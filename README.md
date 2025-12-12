@@ -18,6 +18,7 @@ Rôle Ansible pour gérer des comptes SSH/SFTP jailed avec isolation complète p
 - Ansible >= 2.9
 - Debian/Ubuntu ou RedHat/CentOS
 - Systemd
+- Package `acl` installé (pour les permissions sur les bind mounts)
 
 ## Variables principales
 
@@ -115,6 +116,28 @@ Le rôle installe un service `sshd@jail` basé sur un template systemd :
 |--------|-------------------|-------|-------|
 | `sftpjail` | `false` (défaut) | `/usr/sbin/nologin` | SFTP uniquement |
 | `sshjail` | `true` | `/bin/bash` | Shell interactif dans jail |
+
+### Bind mounts et ACL
+
+Quand un répertoire externe est monté dans la jail avec `rw: yes`, le rôle :
+
+1. **Ajoute automatiquement le owner/group du dossier source** dans `/etc/passwd` et `/etc/group` de la jail, permettant à l'utilisateur de voir correctement les propriétaires des fichiers.
+
+2. **Applique des ACL** sur le dossier source pour donner les droits `rwX` à l'utilisateur jailed :
+   - ACL sur les fichiers/dossiers existants (récursif)
+   - ACL par défaut pour les nouveaux fichiers créés
+
+Exemple de bind mount :
+```yaml
+bind_remounts:
+  - src_dir: '/var/www/monsite'      # dossier source (propriétaire: www-data)
+    mount_point: '/home_local/user/www'  # point de montage dans la jail
+    rw: yes                          # lecture/écriture (déclenche les ACL)
+```
+
+Résultat :
+- L'utilisateur `www-data` apparaît dans `/jails/user/etc/passwd`
+- L'utilisateur jailed peut écrire dans `/var/www/monsite` via les ACL
 
 ## Suppression d'un utilisateur
 

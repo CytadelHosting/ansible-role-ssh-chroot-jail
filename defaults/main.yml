@@ -132,8 +132,17 @@ ssh_chroot_jail_dirs:
   - home_local
   - tmp
 
-# Appliquer recurse sur la création des répertoires
-ssh_chroot_jail_dirs_recurse: true
+# -----------------------------------------------------------------------------
+# ACL sur les bind mounts
+# -----------------------------------------------------------------------------
+# Quand un bind mount est configuré en rw, le rôle applique automatiquement
+# des ACL sur le dossier source pour donner les droits rwX à l'utilisateur jailed.
+# Cela inclut :
+#   - ACL sur les fichiers/dossiers existants (récursif)
+#   - ACL par défaut pour les nouveaux fichiers/dossiers créés
+#
+# Prérequis : le package 'acl' doit être installé sur le système
+# Le filesystem doit supporter les ACL (ext4, xfs, etc. avec option 'acl')
 
 # -----------------------------------------------------------------------------
 # Devices à créer dans chaque jail
