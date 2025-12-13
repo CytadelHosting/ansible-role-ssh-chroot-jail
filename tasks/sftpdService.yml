@@ -4,8 +4,23 @@
 # =============================================================================
 
 # -----------------------------------------------------------------------------
+# Nettoyage d'éventuels symlinks résiduels
+# -----------------------------------------------------------------------------
+- name: Remove any residual symlink in /etc/systemd/system/
+  file:
+    path: /etc/systemd/system/sshd@.service
+    state: absent
+  register: symlink_removed
+
+# -----------------------------------------------------------------------------
 # Installation du service template systemd
 # -----------------------------------------------------------------------------
+# Vérifier si le fichier existe déjà (fourni par openssh-server sur certaines distros)
+- name: Check if sshd@.service already exists
+  stat:
+    path: /lib/systemd/system/sshd@.service
+  register: sshd_template_exists
+
 - name: Copy sshd@ service template to /lib/systemd/system/
   copy:
     src: sshd@.service
@@ -13,18 +28,14 @@
     owner: root
     group: root
     mode: '0644'
-  notify:
-    - reload systemd daemon
-    - restart sshd jail daemon
+  register: sshd_service_file
+  when: not sshd_template_exists.stat.exists
 
-- name: Create symlink in /etc/systemd/system/
-  file:
-    src: /lib/systemd/system/sshd@.service
-    dest: /etc/systemd/system/sshd@.service
-    state: link
-  notify:
-    - reload systemd daemon
-  ignore_errors: '{{ ansible_check_mode }}'
+# Reload systemd immédiatement si quelque chose a changé
+- name: Reload systemd daemon after service file change
+  systemd:
+    daemon_reload: true
+  when: sshd_service_file.changed | default(false) or symlink_removed.changed
 
 # -----------------------------------------------------------------------------
 # Configuration SSHD pour jail
