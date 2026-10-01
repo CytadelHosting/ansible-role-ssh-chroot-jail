@@ -1,62 +1,129 @@
 ---
 # =============================================================================
-# Installation du service SSHD jail (sshd@jail)
+# Installation du service SSHD jail autonome (sshd-jail.service)
 # =============================================================================
+# sshd@.service fourni par openssh-server est une unité per-connection
+# (sshd -i, StandardInput=socket) : elle ne peut pas porter un daemon autonome.
 
 # -----------------------------------------------------------------------------
-# Nettoyage d'éventuels symlinks résiduels
+# Détection d'un conflit de port avec le SSH d'administration
 # -----------------------------------------------------------------------------
-- name: Remove any residual symlink in /etc/systemd/system/
+# Deux sshd sur le même port se disputent le bind au boot : si le jail gagne,
+# le SSH d'administration ne démarre plus.
+- name: Read effective admin sshd configuration
+  command: "/usr/sbin/sshd -T -f {{ sshd_admin_config_path }}"
+  register: sshd_admin_effective_config
+  changed_when: false
+  check_mode: false
+
+- name: Detect whether admin sshd already listens on the jail port
+  set_fact:
+    sshd_jail_port_conflict: >-
+      {{ sshd_admin_effective_config.stdout_lines
+         | select('match', '^listenaddress ')
+         | map('regex_replace', '^listenaddress \S*:(\d+).*$', '\1')
+         | map('int')
+         | select('equalto', sshd_jail_port | int)
+         | list
+         | length > 0 }}
+
+- name: Warn that sshd jail daemon is skipped because of the port conflict
+  debug:
+    msg: >-
+      ATTENTION : {{ sshd_admin_config_path }} écoute déjà sur le port {{ sshd_jail_port }}.
+      {{ sshd_jail_daemon }} n'est ni déployé ni démarré pour préserver le SSH d'administration.
+      Déplacer d'abord ssh.service sur un autre port (ex : 1022), puis rejouer le rôle.
+  when: sshd_jail_port_conflict
+
+# -----------------------------------------------------------------------------
+# Configuration SSHD et unité systemd dédiée
+# -----------------------------------------------------------------------------
+- name: Deploy sshd jail configuration and systemd unit
+  when: not sshd_jail_port_conflict
+  block:
+    - name: Deploy sshd_config for jail service
+      template:
+        src: sshd_config_jail.j2
+        dest: "{{ sshd_jail_config_path }}"
+        owner: root
+        group: root
+        mode: '0600'
+        validate: '/usr/sbin/sshd -t -f %s'
+      notify:
+        - restart sshd jail daemon
+
+    - name: Deploy sshd jail systemd unit
+      template:
+        src: sshd-jail.service.j2
+        dest: "/etc/systemd/system/{{ sshd_jail_daemon }}.service"
+        owner: root
+        group: root
+        mode: '0644'
+      register: sshd_jail_unit
+      notify:
+        - restart sshd jail daemon
+
+# -----------------------------------------------------------------------------
+# Migration depuis l'ancienne instance sshd@jail
+# -----------------------------------------------------------------------------
+- name: Remove residual sshd@ template symlink from older role versions
   file:
     path: /etc/systemd/system/sshd@.service
     state: absent
-  register: symlink_removed
+  register: sshd_legacy_template_link
 
-# -----------------------------------------------------------------------------
-# Installation du service template systemd
-# -----------------------------------------------------------------------------
-# Vérifier si le fichier existe déjà (fourni par openssh-server sur certaines distros)
-- name: Check if sshd@.service already exists
-  stat:
-    path: /lib/systemd/system/sshd@.service
-  register: sshd_template_exists
+- name: Remove legacy sshd@jail boot activation
+  file:
+    path: "/etc/systemd/system/multi-user.target.wants/{{ sshd_jail_legacy_daemon }}.service"
+    state: absent
+  register: sshd_legacy_wants_link
 
-- name: Copy sshd@ service template to /lib/systemd/system/
-  copy:
-    src: sshd@.service
-    dest: /lib/systemd/system/sshd@.service
-    owner: root
-    group: root
-    mode: '0644'
-  register: sshd_service_file
-  when: not sshd_template_exists.stat.exists
-
-# Reload systemd immédiatement si quelque chose a changé
-- name: Reload systemd daemon after service file change
+- name: Reload systemd daemon after unit changes
   systemd:
     daemon_reload: true
-  when: sshd_service_file.changed | default(false) or symlink_removed.changed
+  when: >-
+    sshd_jail_unit.changed | default(false)
+    or sshd_legacy_template_link.changed
+    or sshd_legacy_wants_link.changed
+
+- name: Gather service facts to detect legacy sshd jail instance
+  service_facts:
+
+- name: Stop legacy sshd@jail instance to free the jail port
+  systemd:
+    name: "{{ sshd_jail_legacy_daemon }}"
+    state: stopped
+  when: ansible_facts.services.get(sshd_jail_legacy_daemon ~ '.service', {}).get('state') == 'running'
 
 # -----------------------------------------------------------------------------
-# Configuration SSHD pour jail
+# Vérification du port réel avant démarrage
 # -----------------------------------------------------------------------------
-- name: Deploy sshd_config for jail service
-  template:
-    src: sshd_config_jail.j2
-    dest: "/etc/ssh/sshd_config_{{ ssh_chroot_service_name }}"
-    owner: root
-    group: root
-    mode: '0600'
-    validate: '/usr/sbin/sshd -t -f %s'
-  notify:
-    - restart sshd jail daemon
+# sshd_config peut ne pas refléter l'état réel : SSHD_OPTS, ssh.socket,
+# config modifiée sans restart, sshd lancé à la main.
+- name: Inspect processes listening on the jail port before start
+  include_tasks: inspect-jail-port.yml
+  when: not sshd_jail_port_conflict
+
+- name: Refuse to start sshd jail while another process holds its port
+  fail:
+    msg: >-
+      Le port {{ sshd_jail_port }} est déjà utilisé par le(s) PID(s)
+      {{ sshd_jail_port_foreign_pids | join(', ') }}, qui n'appartiennent pas à {{ sshd_jail_daemon }}.
+      Rien n'a été démarré. Détail : {{ sshd_jail_port_listeners.stdout }}
+  when:
+    - not sshd_jail_port_conflict
+    - sshd_jail_port_foreign_pids | length > 0
 
 # -----------------------------------------------------------------------------
 # Activation et démarrage du service
 # -----------------------------------------------------------------------------
-- name: Ensure sshd@jail service is enabled and started
+- name: Ensure sshd jail service is enabled and started
   systemd:
     name: "{{ sshd_jail_daemon }}"
     enabled: true
     state: started
-    daemon_reload: true
+  when:
+    - not sshd_jail_port_conflict
+    - not (ansible_check_mode and sshd_jail_unit.changed)
+  notify:
+    - verify sshd jail daemon

@@ -15,7 +15,7 @@
 - import_tasks: backup_original_config.yml
 
 # -----------------------------------------------------------------------------
-# Installation du service SSHD jail (sshd@jail)
+# Installation du service SSHD jail (sshd-jail)
 # -----------------------------------------------------------------------------
 - import_tasks: sftpdService.yml
 
@@ -95,10 +95,11 @@
 - name: Update sshd_config_jail with user exceptions
   template:
     src: sshd_config_jail.j2
-    dest: "/etc/ssh/sshd_config_{{ ssh_chroot_service_name }}"
+    dest: "{{ sshd_jail_config_path }}"
     owner: root
     group: root
     mode: '0600'
     validate: '/usr/sbin/sshd -t -f %s'
   notify:
     - restart sshd jail daemon
+  when: not sshd_jail_port_conflict

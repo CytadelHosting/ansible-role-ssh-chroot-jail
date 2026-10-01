@@ -1,0 +1,29 @@
+---
+# =============================================================================
+# Inspection des processus réellement à l'écoute sur le port jail
+# =============================================================================
+# Produit sshd_jail_port_foreign_pids : PIDs à l'écoute sur sshd_jail_port
+# qui ne sont pas le processus principal de sshd-jail.
+
+- name: Read sshd jail service status
+  systemd:
+    name: "{{ sshd_jail_daemon }}"
+  register: sshd_jail_service_status
+  check_mode: false
+
+- name: List processes listening on the jail port
+  command:
+    argv: [ss, -H, -ltnp, sport, '=', ":{{ sshd_jail_port }}"]
+  register: sshd_jail_port_listeners
+  changed_when: false
+  check_mode: false
+
+- name: Identify foreign processes listening on the jail port
+  set_fact:
+    sshd_jail_port_foreign_pids: >-
+      {{ sshd_jail_port_listeners.stdout
+         | regex_findall('pid=(\d+)')
+         | map('int')
+         | unique
+         | reject('equalto', sshd_jail_service_status.status.MainPID | default(0) | int)
+         | list }}

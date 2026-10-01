@@ -3,9 +3,6 @@
 # Variables spécifiques RedHat/CentOS/Rocky/Alma
 # =============================================================================
 
-# Nom du service SSHD jail (utilisé par les handlers)
-sshd_jail_daemon: 'sshd@jail'
-
 # Chemin des librairies 64-bit
 lib64_path: /usr/lib64
 

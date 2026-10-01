@@ -26,8 +26,21 @@ sftp_chroot_jail_group_name: 'sftpjail'
 # -----------------------------------------------------------------------------
 # Configuration du service SSHD jail
 # -----------------------------------------------------------------------------
-# Nom du service (utilisé avec sshd@<name>)
+# Suffixe commun du service et de sa configuration
 ssh_chroot_service_name: 'jail'
+
+# Unité systemd autonome du daemon jail (/etc/systemd/system/sshd-jail.service)
+sshd_jail_daemon: "sshd-{{ ssh_chroot_service_name }}"
+
+# Configuration lue par le daemon jail
+sshd_jail_config_path: "/etc/ssh/sshd_config_{{ ssh_chroot_service_name }}"
+
+# Ancienne instance (sshd@jail) désactivée et arrêtée par le rôle
+sshd_jail_legacy_daemon: "sshd@{{ ssh_chroot_service_name }}"
+
+# Configuration du SSH d'administration (ssh.service), lue uniquement :
+# si elle écoute déjà sur sshd_jail_port, le daemon jail n'est pas déployé
+sshd_admin_config_path: /etc/ssh/sshd_config
 
 # Port d'écoute pour le service jail (les users jailed se connectent ici)
 sshd_jail_port: 22

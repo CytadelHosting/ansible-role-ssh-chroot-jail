@@ -90,10 +90,13 @@ ssh_chroot_jail_sync_bins: false
 
 ### Service SSHD
 
-Le rôle installe un service `sshd@jail` basé sur un template systemd :
-- Service : `/lib/systemd/system/sshd@.service`
-- Config : `/etc/ssh/sshd_config_jail`
-- Commandes : `systemctl restart sshd@jail`
+Le rôle installe un daemon SSHD autonome, indépendant de `ssh.service` (SSH d'administration) :
+- Service : `/etc/systemd/system/sshd-jail.service`
+- Config : `/etc/ssh/sshd_config_jail` (validée par `sshd -t` avant chaque restart)
+- Commandes : `systemctl restart sshd-jail`
+
+L'unité `sshd@.service` fournie par openssh-server est per-connection (`sshd -i`, socket activation)
+et n'est pas utilisée. Une ancienne instance `sshd@jail` est désactivée et arrêtée par le rôle.
 
 ### Structure d'une jail
 

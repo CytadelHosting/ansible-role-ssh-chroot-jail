@@ -11,9 +11,47 @@
     daemon_reload: true
 
 # -----------------------------------------------------------------------------
-# Service SSHD jail
+# Service SSHD jail (ne touche jamais ssh.service)
 # -----------------------------------------------------------------------------
-- name: restart sshd jail daemon
-  service:
+- name: validate sshd jail config
+  command: "/usr/sbin/sshd -t -f {{ sshd_jail_config_path }}"
+  changed_when: false
+  listen: restart sshd jail daemon
+
+- name: restart sshd jail service
+  systemd:
     name: "{{ sshd_jail_daemon }}"
     state: restarted
+  listen: restart sshd jail daemon
+
+# Vérification après (re)démarrage : le port doit être tenu par sshd-jail lui-même
+- name: wait for sshd jail port to listen
+  wait_for:
+    port: "{{ sshd_jail_port }}"
+    timeout: 30
+  when: not ansible_check_mode
+  listen:
+    - restart sshd jail daemon
+    - verify sshd jail daemon
+
+- name: inspect sshd jail port after start
+  include_tasks: "{{ role_path }}/tasks/inspect-jail-port.yml"
+  when: not ansible_check_mode
+  listen:
+    - restart sshd jail daemon
+    - verify sshd jail daemon
+
+- name: assert sshd jail daemon owns its port
+  assert:
+    that:
+      - sshd_jail_service_status.status.ActiveState == 'active'
+      - sshd_jail_port_foreign_pids | length == 0
+    fail_msg: >-
+      {{ sshd_jail_daemon }} est {{ sshd_jail_service_status.status.ActiveState }}
+      et le port {{ sshd_jail_port }} est tenu par : {{ sshd_jail_port_listeners.stdout | default('personne') }}.
+      Consulter : journalctl -u {{ sshd_jail_daemon }}
+    quiet: true
+  when: not ansible_check_mode
+  listen:
+    - restart sshd jail daemon
+    - verify sshd jail daemon
