@@ -74,7 +74,16 @@ Subsystem sftp internal-sftp -u {{ sshd_jail_sftp_umask }}
 # ===========================
 # === GROUPES AUTORISÉS   ===
 # ===========================
-AllowGroups {{ ssh_chroot_jail_group_name }} {{ sftp_chroot_jail_group_name }}
+#AllowGroups {{ ssh_chroot_jail_group_name }} {{ sftp_chroot_jail_group_name }}
+AllowGroups {{
+  (
+    [ssh_chroot_jail_group_name]
+    + [sftp_chroot_jail_group_name]
+    + ssh_additional_allow_groups
+  )
+  | unique
+  | join(' ')
+}}
 
 # ===========================
 # === CHROOT PAR GROUPE   ===

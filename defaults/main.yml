@@ -17,11 +17,20 @@ ssh_chroot_jail_archive_path: /jails
 # Groupe pour les utilisateurs avec shell interactif dans la jail
 ssh_chroot_jail_group_name: 'sshjail'
 
+# GID optionnel pour le groupe sshjail
+# ssh_chroot_jail_group_gid: 2000
+
 # Groupe pour les utilisateurs SFTP uniquement (ForceCommand internal-sftp)
 sftp_chroot_jail_group_name: 'sftpjail'
 
-# GID optionnel pour le groupe sshjail
-# ssh_chroot_jail_group_gid: 2000
+# GID optionnel pour le groupe sftpjail
+# sftp_chroot_jail_group_gid: 2001
+
+
+# Groupes supplémentaires autorisés à se connecter en SSH
+# Ces groupes ne sont ni créés ni gérés par ce rôle.
+ssh_additional_allow_groups: []
+
 
 # -----------------------------------------------------------------------------
 # Configuration du service SSHD jail
