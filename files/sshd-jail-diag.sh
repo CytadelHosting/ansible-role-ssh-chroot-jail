@@ -12,6 +12,8 @@
 #    (depuis OpenSSH 9.8, les connexions ne loggent plus sous "sshd[")
 # 4. Capture des premiers paquets du client : bannière + KEXINIT en clair,
 #    comparés à l'offre serveur. Aucun log client nécessaire.
+#
+# Lecture des résultats : docs/sshd-jail-diag.md du rôle CytadelHosting.ssh-chroot-jail
 # =============================================================================
 set -euo pipefail
 

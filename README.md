@@ -139,12 +139,7 @@ sshd_jail_per_source_penalty_exempt_list: []     # ex : ['203.0.113.10/32']
 
 ## Diagnostic d'un client qui ne se connecte plus
 
-```bash
-sshd-jail-diag 203.0.113.10        # capture 180 s par défaut
-SINCE="7 days ago" sshd-jail-diag 203.0.113.10 300
-```
-
-L'outil affiche l'offre réelle du serveur, les bans fail2ban et les règles pare-feu sur l'IP, puis les journaux `sshd`, `sshd-session` et `sshd-auth`. Depuis OpenSSH 9.8, un filtre sur `sshd[` ou `journalctl -t sshd` ne voit plus les connexions. Il capture enfin la bannière et le KEXINIT du client, qui passent en clair, et indique pour chaque catégorie l'algorithme retenu, ou `AUCUN`. Prérequis : `tcpdump`, `python3`.
+Le rôle installe `/usr/local/sbin/sshd-jail-diag <ip_client>`. Il trouve la cause côté serveur, sans log client. Documentation complète : [docs/sshd-jail-diag.md](docs/sshd-jail-diag.md).
 
 ### Structure d'une jail
 
