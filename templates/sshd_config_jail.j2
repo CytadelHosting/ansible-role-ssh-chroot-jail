@@ -28,6 +28,7 @@ PermitRootLogin {{ sshd_jail_permit_root_login }}
 PubkeyAuthentication {{ sshd_jail_pubkey_authentication }}
 PasswordAuthentication {{ sshd_jail_password_authentication }}
 # ChallengeResponseAuthentication est déprécié depuis OpenSSH 8.7
+# Utiliser KbdInteractiveAuthentication sur les systèmes récents
 {% if ansible_facts.os_family == 'RedHat' and ansible_facts.distribution_major_version | int >= 9 %}
 KbdInteractiveAuthentication {{ sshd_jail_kbd_interactive_authentication | default(sshd_jail_challenge_response_authentication) }}
 {% elif ansible_facts.os_family == 'Debian' and ansible_facts.distribution_major_version | int >= 12 %}
