@@ -33,7 +33,7 @@ sftp_chroot_jail_group_name: 'sftpjail'
 ssh_chroot_service_name: 'jail'
 
 # Unité systemd (/etc/systemd/system/sshd-jail.service)
-# ou script SysV (/etc/init.d/sshd-jail) si ansible_service_mgr != systemd
+# ou script SysV (/etc/init.d/sshd-jail) si ansible_facts.service_mgr != systemd
 sshd_jail_daemon: "sshd-{{ ssh_chroot_service_name }}"
 
 # Configuration lue par le daemon jail (fichier autonome, pas les drop-ins de ssh.service)

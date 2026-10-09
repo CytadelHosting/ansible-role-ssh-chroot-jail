@@ -25,4 +25,3 @@
   debug:
     msg: "Backup créé : {{ ssh_chroot_backup_path }}"
   when: not sshd_backup_stat.stat.exists
-

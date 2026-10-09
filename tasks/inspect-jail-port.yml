@@ -12,7 +12,7 @@
   register: sshd_jail_service_status
   failed_when: false
   check_mode: false
-  when: ansible_service_mgr == 'systemd'
+  when: ansible_facts.service_mgr == 'systemd'
 
 - name: Read the sshd jail pid file
   command: "cat {{ sshd_jail_pid_file }}"
@@ -29,7 +29,7 @@
   set_fact:
     sshd_jail_main_pid: "{{ sshd_jail_service_status.status.MainPID | int }}"
   when:
-    - ansible_service_mgr == 'systemd'
+    - ansible_facts.service_mgr == 'systemd'
     - sshd_jail_service_status.status is defined
     - sshd_jail_service_status.status.MainPID | default(0) | int > 0
 

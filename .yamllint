@@ -5,7 +5,8 @@ rules:
   line-length:
     max: 160
     level: warning
-
-ignore: |
-  .github/stale.yml
-  .travis.yml
+  # defaults/main.yml aligne les listes de dicts en colonnes
+  braces:
+    max-spaces-inside: 1
+  commas:
+    max-spaces-after: -1

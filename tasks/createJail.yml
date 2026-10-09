@@ -65,10 +65,10 @@
 # -----------------------------------------------------------------------------
 - name: "{{ jail_user.name }} | Create jail devices"
   command: >
-    mknod -m 0666 
-    {{ ssh_chroot_jail_path }}/{{ jail_user.name }}/dev/{{ item.dev }} 
-    {{ item.type | default('c') }} 
-    {{ item.major }} 
+    mknod -m 0666
+    {{ ssh_chroot_jail_path }}/{{ jail_user.name }}/dev/{{ item.dev }}
+    {{ item.type | default('c') }}
+    {{ item.major }}
     {{ item.minor }}
   args:
     creates: "{{ ssh_chroot_jail_path }}/{{ jail_user.name }}/dev/{{ item.dev }}"
@@ -121,7 +121,7 @@
   register: bind_owner_names
   changed_when: false
   failed_when: false
-  when: 
+  when:
     - _bind_owners is defined
     - _bind_owners | length > 0
 

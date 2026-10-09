@@ -10,7 +10,7 @@ name: CI
 
 defaults:
   run:
-    working-directory: 'geerlingguy.ssh-chroot-jail'
+    working-directory: 'CytadelHosting.ssh-chroot-jail'
 
 jobs:
 
@@ -19,46 +19,46 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out the codebase.
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
-          path: 'geerlingguy.ssh-chroot-jail'
+          path: 'CytadelHosting.ssh-chroot-jail'
 
       - name: Set up Python 3.
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.x'
+          python-version: '3.13'
 
       - name: Install test dependencies.
-        run: pip3 install yamllint ansible-lint
+        run: pip3 install yamllint
 
       - name: Lint code.
         run: |
           yamllint .
-          ansible-lint
+          bash -n files/sshd-jail-diag.sh
 
   molecule:
     name: Molecule
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         distro:
-          - centos7
-          - ubuntu1804
-          - debian9
+          - debian12
+          - debian13
 
     steps:
       - name: Check out the codebase.
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
-          path: 'geerlingguy.ssh-chroot-jail'
+          path: 'CytadelHosting.ssh-chroot-jail'
 
       - name: Set up Python 3.
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.x'
+          python-version: '3.13'
 
       - name: Install test dependencies.
-        run: pip3 install ansible molecule[docker] docker
+        run: pip3 install ansible molecule molecule-plugins[docker] docker
 
       - name: Run Molecule tests.
         run: molecule test

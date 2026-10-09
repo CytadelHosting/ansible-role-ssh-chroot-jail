@@ -56,10 +56,10 @@
   fail:
     msg: >-
       Le script SysV de {{ sshd_jail_daemon }} suit /etc/init.d/ssh Debian (LSB).
-      Cet hôte est {{ ansible_os_family }} avec {{ ansible_service_mgr }}.
+      Cet hôte est {{ ansible_facts.os_family }} avec {{ ansible_facts.service_mgr }}.
   when:
-    - ansible_service_mgr != 'systemd'
-    - ansible_os_family != 'Debian'
+    - ansible_facts.service_mgr != 'systemd'
+    - ansible_facts.os_family != 'Debian'
 
 # -----------------------------------------------------------------------------
 # Conflit de port avec le SSH d'administration
@@ -92,7 +92,7 @@
 
 - name: Stat an already installed sshd jail service
   stat:
-    path: "{{ '/etc/systemd/system/' ~ sshd_jail_daemon ~ '.service' if ansible_service_mgr == 'systemd' else '/etc/init.d/' ~ sshd_jail_daemon }}"
+    path: "{{ '/etc/systemd/system/' ~ sshd_jail_daemon ~ '.service' if ansible_facts.service_mgr == 'systemd' else '/etc/init.d/' ~ sshd_jail_daemon }}"
   register: sshd_jail_service_present
   when: sshd_jail_port_conflict | bool
 
@@ -140,7 +140,7 @@
         group: root
         mode: '0644'
       register: sshd_jail_unit
-      when: ansible_service_mgr == 'systemd'
+      when: ansible_facts.service_mgr == 'systemd'
       notify:
         - restart sshd jail daemon
 
@@ -152,7 +152,7 @@
         group: root
         mode: '0755'
       register: sshd_jail_init
-      when: ansible_service_mgr != 'systemd'
+      when: ansible_facts.service_mgr != 'systemd'
       notify:
         - restart sshd jail daemon
 
@@ -163,13 +163,13 @@
     path: "/etc/init.d/{{ sshd_jail_daemon }}"
     state: absent
   register: sshd_jail_sysv_script
-  when: ansible_service_mgr == 'systemd'
+  when: ansible_facts.service_mgr == 'systemd'
 
 - name: Drop leftover SysV runlevel links
   command: "update-rc.d -f {{ sshd_jail_daemon }} remove"
   when:
-    - ansible_service_mgr == 'systemd'
-    - ansible_os_family == 'Debian'
+    - ansible_facts.service_mgr == 'systemd'
+    - ansible_facts.os_family == 'Debian'
     - sshd_jail_sysv_script.changed | default(false)
   changed_when: true
 
@@ -177,7 +177,7 @@
   file:
     path: "/etc/systemd/system/{{ sshd_jail_daemon }}.service"
     state: absent
-  when: ansible_service_mgr != 'systemd'
+  when: ansible_facts.service_mgr != 'systemd'
 
 # -----------------------------------------------------------------------------
 # Migration depuis l'ancienne instance sshd@jail (systemd uniquement)
@@ -187,20 +187,20 @@
     path: /etc/systemd/system/sshd@.service
     state: absent
   register: sshd_legacy_template_link
-  when: ansible_service_mgr == 'systemd'
+  when: ansible_facts.service_mgr == 'systemd'
 
 - name: Remove legacy sshd@jail boot activation
   file:
     path: "/etc/systemd/system/multi-user.target.wants/{{ sshd_jail_legacy_daemon }}.service"
     state: absent
   register: sshd_legacy_wants_link
-  when: ansible_service_mgr == 'systemd'
+  when: ansible_facts.service_mgr == 'systemd'
 
 - name: Reload systemd after unit changes
   systemd:
     daemon_reload: true
   when:
-    - ansible_service_mgr == 'systemd'
+    - ansible_facts.service_mgr == 'systemd'
     - >-
       (sshd_jail_unit | default({'changed': false})).changed | bool
       or (sshd_legacy_template_link | default({'changed': false})).changed | bool
@@ -208,14 +208,14 @@
 
 - name: Gather service facts to detect the legacy sshd jail instance
   service_facts:
-  when: ansible_service_mgr == 'systemd'
+  when: ansible_facts.service_mgr == 'systemd'
 
 - name: Stop the legacy sshd@jail instance to free the jail port
   systemd:
     name: "{{ sshd_jail_legacy_daemon }}"
     state: stopped
   when:
-    - ansible_service_mgr == 'systemd'
+    - ansible_facts.service_mgr == 'systemd'
     - ansible_facts.services.get(sshd_jail_legacy_daemon ~ '.service', {}).get('state') == 'running'
 
 # -----------------------------------------------------------------------------

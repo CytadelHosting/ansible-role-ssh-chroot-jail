@@ -21,9 +21,9 @@ StrictModes {{ sshd_jail_strict_modes }}
 PermitRootLogin {{ sshd_jail_permit_root_login }}
 PubkeyAuthentication {{ sshd_jail_pubkey_authentication }}
 PasswordAuthentication {{ sshd_jail_password_authentication }}
-{% if ansible_os_family == 'RedHat' and ansible_distribution_major_version | int >= 9 %}
+{% if ansible_facts.os_family == 'RedHat' and ansible_facts.distribution_major_version | int >= 9 %}
 KbdInteractiveAuthentication {{ sshd_jail_kbd_interactive_authentication | default(sshd_jail_challenge_response_authentication) }}
-{% elif ansible_os_family == 'Debian' and ansible_distribution_major_version | int >= 12 %}
+{% elif ansible_facts.os_family == 'Debian' and ansible_facts.distribution_major_version | int >= 12 %}
 KbdInteractiveAuthentication {{ sshd_jail_kbd_interactive_authentication | default(sshd_jail_challenge_response_authentication) }}
 {% else %}
 ChallengeResponseAuthentication {{ sshd_jail_challenge_response_authentication }}
@@ -37,7 +37,7 @@ AllowTcpForwarding {{ sshd_jail_allow_tcp_forwarding }}
 AllowStreamLocalForwarding {{ sshd_jail_allow_stream_local_forwarding }}
 X11Forwarding {{ sshd_jail_x11_forwarding }}
 PermitTunnel {{ sshd_jail_permit_tunnel }}
-{% if ansible_os_family == 'Debian' %}
+{% if ansible_facts.os_family == 'Debian' %}
 DebianBanner no
 {% endif %}
 Banner none

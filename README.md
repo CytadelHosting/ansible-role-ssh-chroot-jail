@@ -99,7 +99,7 @@ ssh_chroot_jail_sync_bins: false
 
 Daemon autonome, indépendant de `ssh.service` :
 
-| | systemd | SysV (Debian, `ansible_service_mgr != systemd`) |
+| | systemd | SysV (Debian, `ansible_facts.service_mgr != systemd`) |
 |---|---|---|
 | Définition | `/etc/systemd/system/sshd-jail.service` | `/etc/init.d/sshd-jail` |
 | Modèle | `ssh.service` du paquet Debian (`Type=notify`, `RestartPreventExitStatus=255`) | `/etc/init.d/ssh` (LSB, `start-stop-daemon`, pid file dédié) |

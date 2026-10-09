@@ -138,4 +138,3 @@
 - name: "{{ jail_user.name }} | Removal complete"
   debug:
     msg: "Utilisateur {{ jail_user.name }} supprimé. Archive : {{ ssh_chroot_jail_archive_path }}/{{ _archive_filename | default('N/A') }}"
-

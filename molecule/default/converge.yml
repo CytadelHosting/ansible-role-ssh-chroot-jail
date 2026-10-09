@@ -8,6 +8,9 @@
   become: true
 
   vars:
+    # Le sshd de l'image écoute sur 22 : le rôle sauterait le daemon jail
+    sshd_jail_port: 2222
+
     # Utilisateurs de test
     ssh_chroot_jail_users:
       # Alice : SFTP only (allow_interactive: false par défaut)
@@ -34,5 +37,39 @@
           - "AllowTcpForwarding yes"
           - "PermitOpen 127.0.0.1:3306"
 
+  pre_tasks:
+    - name: Update apt cache.
+      apt:
+        update_cache: true
+        cache_valid_time: 600
+      when: ansible_facts.os_family == 'Debian'
+
+    # openssh-server génère les clés d'hôte ; le reste = binaires de ssh_chroot_bins
+    - name: Ensure role dependencies are installed (Debian).
+      apt:
+        name:
+          - openssh-server
+          - acl
+          - rsync
+          - iproute2
+          - procps
+          - nano
+          - vim
+          - tree
+          - git
+          - ncurses-bin
+        state: present
+      when: ansible_facts.os_family == 'Debian'
+
   roles:
     - role: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') | basename }}"
+
+  post_tasks:
+    - name: Validate the deployed jail configuration.
+      command: /usr/sbin/sshd -t -f /etc/ssh/sshd_config_jail
+      changed_when: false
+
+    - name: Check the jail daemon listens on its port.
+      wait_for:
+        port: 2222
+        timeout: 15

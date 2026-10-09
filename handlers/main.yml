@@ -18,7 +18,7 @@
   changed_when: false
   listen: restart sshd jail daemon
 
-# service (pas systemd) : systemctl ou /etc/init.d selon ansible_service_mgr
+# service (pas systemd) : systemctl ou /etc/init.d selon ansible_facts.service_mgr
 - name: restart sshd jail service
   service:
     name: "{{ sshd_jail_daemon }}"
