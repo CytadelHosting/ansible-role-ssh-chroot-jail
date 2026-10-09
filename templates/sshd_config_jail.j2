@@ -87,7 +87,7 @@ PerSourcePenaltyExemptList {{ sshd_jail_per_source_penalty_exempt_list | join(',
 # -u {{ sshd_jail_sftp_umask }} = umask des fichiers créés par SFTP.
 Subsystem sftp internal-sftp -u {{ sshd_jail_sftp_umask }}
 
-AllowGroups {{ ([ssh_chroot_jail_group_name, sftp_chroot_jail_group_name] + sshd_jail_allow_groups_extra | default([])) | join(' ') }}
+AllowGroups {{ ([ssh_chroot_jail_group_name, sftp_chroot_jail_group_name] + sshd_jail_allow_groups_extra | default([])) | unique | join(' ') }}
 
 # OpenSSH garde la PREMIÈRE occurrence d'un mot-clé parmi les Match qui
 # s'appliquent. Les exceptions utilisateur sont donc AVANT les Match Group,

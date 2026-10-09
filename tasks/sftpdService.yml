@@ -6,6 +6,15 @@
 # SysV    : /etc/init.d/sshd-jail, LSB, famille Debian seulement.
 # sshd@.service du paquet est per-connection (sshd -i) : inutilisable ici.
 
+# Sans ce contrôle, l'ancien nom serait ignoré et ses groupes perdraient l'accès.
+- name: Reject the removed variable ssh_additional_allow_groups
+  assert:
+    that:
+      - ssh_additional_allow_groups is not defined
+    fail_msg: >-
+      ssh_additional_allow_groups a été renommée sshd_jail_allow_groups_extra.
+      Renommer la variable dans l'inventaire, sinon ses groupes sortent d'AllowGroups.
+
 - name: Reject an unknown sshd jail crypto profile
   assert:
     that:

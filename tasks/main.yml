@@ -51,6 +51,7 @@
 - name: Ensure sftpjail group exists (SFTP only)
   group:
     name: "{{ sftp_chroot_jail_group_name }}"
+    gid: "{{ sftp_chroot_jail_group_gid | default(omit) }}"
     state: present
 
 # -----------------------------------------------------------------------------
