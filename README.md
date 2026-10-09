@@ -126,6 +126,26 @@ Le préfixe `+` ajoute aux defaults du binaire : sur Debian 13 le post-quantique
 
 `legacy` fait échouer `sshd -t` si l'OpenSSH de la machine a retiré l'algorithme à la compilation. Ne l'activer que pour un client qui ne négocie rien d'autre.
 
+### Groupes hors jail et pénalités
+
+```yaml
+# Groupes autorisés en plus de sshjail/sftpjail. Aucun chroot pour eux.
+sshd_jail_allow_groups_extra: []
+
+# OpenSSH >= 9.8 (Debian 13) : PerSourcePenalties actif par défaut
+sshd_jail_per_source_penalties: ''               # '' = défaut, 'no' = off
+sshd_jail_per_source_penalty_exempt_list: []     # ex : ['203.0.113.10/32']
+```
+
+## Diagnostic d'un client qui ne se connecte plus
+
+```bash
+sshd-jail-diag 203.0.113.10        # capture 180 s par défaut
+SINCE="7 days ago" sshd-jail-diag 203.0.113.10 300
+```
+
+L'outil affiche l'offre réelle du serveur, les bans fail2ban et les règles pare-feu sur l'IP, puis les journaux `sshd`, `sshd-session` et `sshd-auth`. Depuis OpenSSH 9.8, un filtre sur `sshd[` ou `journalctl -t sshd` ne voit plus les connexions. Il capture enfin la bannière et le KEXINIT du client, qui passent en clair, et indique pour chaque catégorie l'algorithme retenu, ou `AUCUN`. Prérequis : `tcpdump`, `python3`.
+
 ### Structure d'une jail
 
 ```

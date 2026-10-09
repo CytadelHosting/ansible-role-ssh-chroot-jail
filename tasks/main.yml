@@ -30,6 +30,15 @@
     group: root
     mode: '0755'
 
+# Usage : sshd-jail-diag <ip_client> (voir README, section Diagnostic)
+- name: Install the sshd jail client diagnostic tool
+  copy:
+    src: sshd-jail-diag.sh
+    dest: /usr/local/sbin/sshd-jail-diag
+    owner: root
+    group: root
+    mode: '0750'
+
 # -----------------------------------------------------------------------------
 # Création des groupes système
 # -----------------------------------------------------------------------------

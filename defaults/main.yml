@@ -105,6 +105,20 @@ sshd_jail_max_auth_tries: 3
 sshd_jail_login_grace_time: 30
 sshd_jail_max_startups: '10:30:60'
 
+# Groupes autorisés en plus de sshjail / sftpjail.
+# ATTENTION : aucun Match Group ne les chroote, leurs membres voient tout le système.
+sshd_jail_allow_groups_extra: []
+
+# PerSourcePenalties (OpenSSH >= 9.8, Debian 13) : actif par défaut. sshd bloque
+# une IP après échec d'auth, connexion sans auth ou LoginGraceTime dépassé, et
+# refuse ses connexions sans rien logger côté client. Un client derrière un NAT
+# partagé, ou dont l'agent essaie plusieurs clés, se fait couper.
+# '' = défaut du binaire, 'no' = désactivé, ou 'authfail:5 noauth:1 max:600 ...'
+# Ignoré sur OpenSSH < 9.8 (mot-clé inconnu, sshd -t échouerait).
+sshd_jail_per_source_penalties: ''
+# IP/CIDR jamais pénalisées (NAT d'un client, supervision)
+sshd_jail_per_source_penalty_exempt_list: []
+
 # Profil crypto du daemon jail. Les listes sont dans vars/main.yml.
 #   modern      : aucune directive crypto. Defaults du paquet OpenSSH,
 #                 qui évoluent avec l'upgrade (aligné sur cytadel.common).

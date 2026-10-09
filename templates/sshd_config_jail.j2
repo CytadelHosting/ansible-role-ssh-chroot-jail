@@ -68,6 +68,16 @@ MaxAuthTries {{ sshd_jail_max_auth_tries }}
 LoginGraceTime {{ sshd_jail_login_grace_time }}
 MaxStartups {{ sshd_jail_max_startups }}
 AcceptEnv LANG LC_*
+{% if (sshd_jail_openssh_version | default('0')) is version('9.8', '>=') %}
+
+# --- pénalités par source (OpenSSH >= 9.8) ---
+{% if sshd_jail_per_source_penalties | default('') | trim | length > 0 %}
+PerSourcePenalties {{ sshd_jail_per_source_penalties | trim }}
+{% endif %}
+{% if sshd_jail_per_source_penalty_exempt_list | default([]) | length > 0 %}
+PerSourcePenaltyExemptList {{ sshd_jail_per_source_penalty_exempt_list | join(',') }}
+{% endif %}
+{% endif %}
 {% if sshd_jail_extra_config | default('') | trim | length > 0 %}
 
 {{ sshd_jail_extra_config | trim }}
@@ -77,7 +87,7 @@ AcceptEnv LANG LC_*
 # -u {{ sshd_jail_sftp_umask }} = umask des fichiers créés par SFTP.
 Subsystem sftp internal-sftp -u {{ sshd_jail_sftp_umask }}
 
-AllowGroups {{ ssh_chroot_jail_group_name }} {{ sftp_chroot_jail_group_name }}
+AllowGroups {{ ([ssh_chroot_jail_group_name, sftp_chroot_jail_group_name] + sshd_jail_allow_groups_extra | default([])) | join(' ') }}
 
 # OpenSSH garde la PREMIÈRE occurrence d'un mot-clé parmi les Match qui
 # s'appliquent. Les exceptions utilisateur sont donc AVANT les Match Group,
