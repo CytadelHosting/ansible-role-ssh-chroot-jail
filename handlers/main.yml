@@ -18,8 +18,9 @@
   changed_when: false
   listen: restart sshd jail daemon
 
+# service (pas systemd) : systemctl ou /etc/init.d selon ansible_service_mgr
 - name: restart sshd jail service
-  systemd:
+  service:
     name: "{{ sshd_jail_daemon }}"
     state: restarted
   listen: restart sshd jail daemon
@@ -44,12 +45,13 @@
 - name: assert sshd jail daemon owns its port
   assert:
     that:
-      - sshd_jail_service_status.status.ActiveState == 'active'
+      - sshd_jail_main_pid | int > 0
       - sshd_jail_port_foreign_pids | length == 0
     fail_msg: >-
-      {{ sshd_jail_daemon }} est {{ sshd_jail_service_status.status.ActiveState }}
-      et le port {{ sshd_jail_port }} est tenu par : {{ sshd_jail_port_listeners.stdout | default('personne') }}.
-      Consulter : journalctl -u {{ sshd_jail_daemon }}
+      {{ sshd_jail_daemon }} (pid {{ sshd_jail_main_pid | default(0) }})
+      ne tient pas seul le port {{ sshd_jail_port }}.
+      Écoute : {{ sshd_jail_port_listeners.stdout | default('personne') }}.
+      systemd : journalctl -u {{ sshd_jail_daemon }} — SysV : /var/log/auth.log
     quiet: true
   when: not ansible_check_mode
   listen:

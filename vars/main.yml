@@ -1,0 +1,34 @@
+---
+# Profils crypto du sshd jail.
+# Une chaîne vide = pas de directive = defaults compilés du paquet OpenSSH.
+# Le préfixe '+' ajoute aux defaults sans retirer le post-quantique (Debian 13).
+# Une surcharge sshd_jail_* non vide dans l'inventaire remplace la ligne du profil.
+
+sshd_jail_crypto_profiles:
+  modern:
+    ciphers: ''
+    kex_algorithms: ''
+    macs: ''
+    host_key_algorithms: ''
+    pubkey_accepted_algorithms: ''
+
+  compatible:
+    ciphers: ''
+    kex_algorithms: "+diffie-hellman-group14-sha256,\
+      diffie-hellman-group16-sha512,\
+      diffie-hellman-group18-sha512,\
+      diffie-hellman-group-exchange-sha256"
+    macs: ''
+    host_key_algorithms: ''
+    pubkey_accepted_algorithms: ''
+
+  legacy:
+    ciphers: '+aes128-cbc,aes256-cbc'
+    kex_algorithms: "+diffie-hellman-group14-sha256,\
+      diffie-hellman-group16-sha512,\
+      diffie-hellman-group18-sha512,\
+      diffie-hellman-group-exchange-sha256,\
+      diffie-hellman-group14-sha1"
+    macs: '+hmac-sha1'
+    host_key_algorithms: '+ssh-rsa'
+    pubkey_accepted_algorithms: '+ssh-rsa'

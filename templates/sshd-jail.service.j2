@@ -1,18 +1,25 @@
 {{ ansible_managed | comment }}
+# Calqué sur /lib/systemd/system/ssh.service du paquet Debian openssh-server.
+# RuntimeDirectory=sshd est volontairement absent : ce répertoire est partagé
+# avec ssh.service, et systemd le supprimerait à l'arrêt de cette unité.
+
 [Unit]
-Description=OpenSSH Jail/SFTP Server
+Description=OpenSSH Jail/SFTP server
 Documentation=man:sshd(8) man:sshd_config(5)
-After=network.target
-Wants=network.target
+After=network.target auditd.service
+ConditionPathExists=!{{ sshd_jail_disable_flag }}
 
 [Service]
-Type=simple
+Type=notify
+EnvironmentFile=-{{ sshd_jail_default_path }}
+ExecStartPre=/bin/sh -c 'test -d /run/sshd || install -d -m 0755 -o root -g root /run/sshd'
 ExecStartPre=/usr/sbin/sshd -t -f {{ sshd_jail_config_path }}
-ExecStart=/usr/sbin/sshd -D -f {{ sshd_jail_config_path }}
+ExecStart=/usr/sbin/sshd -D -f {{ sshd_jail_config_path }} $SSHD_OPTS
+ExecReload=/usr/sbin/sshd -t -f {{ sshd_jail_config_path }}
 ExecReload=/bin/kill -HUP $MAINPID
 KillMode=process
 Restart=on-failure
-RestartSec=5
+RestartPreventExitStatus=255
 
 [Install]
 WantedBy=multi-user.target

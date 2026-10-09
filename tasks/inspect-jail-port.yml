@@ -1,15 +1,45 @@
 ---
 # =============================================================================
-# Inspection des processus réellement à l'écoute sur le port jail
+# Processus réellement à l'écoute sur le port jail
 # =============================================================================
-# Produit sshd_jail_port_foreign_pids : PIDs à l'écoute sur sshd_jail_port
-# qui ne sont pas le processus principal de sshd-jail.
+# Produit sshd_jail_port_foreign_pids : PIDs à l'écoute qui ne sont pas
+# le processus principal de sshd-jail.
+# systemd : MainPID de l'unité (notify). Secours : PidFile, valable aussi en SysV.
 
-- name: Read sshd jail service status
+- name: Read the sshd jail unit status
   systemd:
     name: "{{ sshd_jail_daemon }}"
   register: sshd_jail_service_status
+  failed_when: false
   check_mode: false
+  when: ansible_service_mgr == 'systemd'
+
+- name: Read the sshd jail pid file
+  command: "cat {{ sshd_jail_pid_file }}"
+  register: sshd_jail_pidfile_raw
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Default the sshd jail main PID
+  set_fact:
+    sshd_jail_main_pid: 0
+
+- name: Use the systemd MainPID when the unit is running
+  set_fact:
+    sshd_jail_main_pid: "{{ sshd_jail_service_status.status.MainPID | int }}"
+  when:
+    - ansible_service_mgr == 'systemd'
+    - sshd_jail_service_status.status is defined
+    - sshd_jail_service_status.status.MainPID | default(0) | int > 0
+
+- name: Fall back to the pid file
+  set_fact:
+    sshd_jail_main_pid: "{{ sshd_jail_pidfile_raw.stdout | trim }}"
+  when:
+    - sshd_jail_main_pid | int == 0
+    - sshd_jail_pidfile_raw.rc | default(1) == 0
+    - sshd_jail_pidfile_raw.stdout | default('') | trim is match('^[0-9]+$')
 
 - name: List processes listening on the jail port
   command:
@@ -25,5 +55,5 @@
          | regex_findall('pid=(\d+)')
          | map('int')
          | unique
-         | reject('equalto', sshd_jail_service_status.status.MainPID | default(0) | int)
+         | reject('equalto', sshd_jail_main_pid | int)
          | list }}

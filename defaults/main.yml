@@ -29,11 +29,25 @@ sftp_chroot_jail_group_name: 'sftpjail'
 # Suffixe commun du service et de sa configuration
 ssh_chroot_service_name: 'jail'
 
-# Unité systemd autonome du daemon jail (/etc/systemd/system/sshd-jail.service)
+# Unité systemd (/etc/systemd/system/sshd-jail.service)
+# ou script SysV (/etc/init.d/sshd-jail) si ansible_service_mgr != systemd
 sshd_jail_daemon: "sshd-{{ ssh_chroot_service_name }}"
 
-# Configuration lue par le daemon jail
+# Configuration lue par le daemon jail (fichier autonome, pas les drop-ins de ssh.service)
 sshd_jail_config_path: "/etc/ssh/sshd_config_{{ ssh_chroot_service_name }}"
+
+# Pid distinct : /run/sshd.pid appartient au SSH d'administration
+sshd_jail_pid_file: "/run/sshd-{{ ssh_chroot_service_name }}.pid"
+
+# Équivalent Debian de /etc/default/ssh, lu par l'unité et par le script SysV
+sshd_jail_default_path: "/etc/default/sshd-{{ ssh_chroot_service_name }}"
+
+# Options supplémentaires (debug, etc.). Ne pas y mettre -f ni -D.
+sshd_jail_extra_opts: ''
+
+# Fichier témoin, même convention que /etc/ssh/sshd_not_to_be_run du paquet.
+# S'il existe, systemd (Condition) et le script SysV refusent de démarrer.
+sshd_jail_disable_flag: "/etc/ssh/sshd-{{ ssh_chroot_service_name }}_not_to_be_run"
 
 # Ancienne instance (sshd@jail) désactivée et arrêtée par le rôle
 sshd_jail_legacy_daemon: "sshd@{{ ssh_chroot_service_name }}"
@@ -66,15 +80,20 @@ sshd_jail_sftp_umask: '007'
 # -----------------------------------------------------------------------------
 # Paramètres de sécurité SSHD
 # -----------------------------------------------------------------------------
+# Auth / forwarding : même charte que cytadel.common, sauf ce qu'une jail SFTP
+# doit garder fermé (agent, tcp, stream local, X11, tunnel, mot de passe).
 sshd_jail_permit_root_login: 'no'
 sshd_jail_password_authentication: 'no'
 sshd_jail_pubkey_authentication: 'yes'
 sshd_jail_challenge_response_authentication: 'no'
 sshd_jail_use_pam: 'yes'
+sshd_jail_strict_modes: 'yes'
 sshd_jail_use_dns: 'no'
 sshd_jail_x11_forwarding: 'no'
 sshd_jail_allow_agent_forwarding: 'no'
 sshd_jail_allow_tcp_forwarding: 'no'
+sshd_jail_allow_stream_local_forwarding: 'no'
+sshd_jail_permit_tunnel: 'no'
 sshd_jail_print_motd: 'no'
 
 # KeepAlive
@@ -86,20 +105,33 @@ sshd_jail_max_auth_tries: 3
 sshd_jail_login_grace_time: 30
 sshd_jail_max_startups: '10:30:60'
 
-# Algorithmes cryptographiques (configuration moderne et sécurisée)
-# Référence : https://infosec.mozilla.org/guidelines/openssh
-#
-# Ces algorithmes sont compatibles avec OpenSSH 7.4+ (Debian 10+, RHEL 8+)
-# et offrent un bon équilibre sécurité/compatibilité.
-#
-# Note : curve25519-sha256 et curve25519-sha256@libssh.org sont identiques,
-#        on inclut les deux pour compatibilité maximale.
-sshd_jail_ciphers: 'chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr'
-sshd_jail_kex_algorithms: 'curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512,diffie-hellman-group-exchange-sha256'
-sshd_jail_macs: 'hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,umac-128-etm@openssh.com,hmac-sha2-512,hmac-sha2-256'
-sshd_jail_host_key_algorithms: 'ssh-ed25519,ssh-ed25519-cert-v01@openssh.com,rsa-sha2-512,rsa-sha2-256'
+# Profil crypto du daemon jail. Les listes sont dans vars/main.yml.
+#   modern      : aucune directive crypto. Defaults du paquet OpenSSH,
+#                 qui évoluent avec l'upgrade (aligné sur cytadel.common).
+#   compatible  : modern + KEX modp (group14-sha256, group16/18, group-exchange).
+#                 Clients SFTP sans curve25519 ni post-quantique.
+#   legacy      : compatible + ssh-rsa, hmac-sha1, group14-sha1, aes-cbc.
+#                 Clients très anciens. sshd -t échoue si l'OpenSSH du système
+#                 a retiré l'algorithme à la compilation.
+sshd_jail_crypto_profile: modern
 
-# Logging
+# Surcharge explicite : une valeur non vide remplace le profil pour CETTE directive.
+# Préfixe OpenSSH : '+' ajoute aux defaults, '^' place en tête, '-' retire.
+# Ancien jeu figé (avant l'alignement), pour revenir au comportement précédent :
+#   sshd_jail_ciphers: 'chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr'
+#   sshd_jail_kex_algorithms: 'curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512,diffie-hellman-group-exchange-sha256'
+#   sshd_jail_macs: 'hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,umac-128-etm@openssh.com,hmac-sha2-512,hmac-sha2-256'
+#   sshd_jail_host_key_algorithms: 'ssh-ed25519,ssh-ed25519-cert-v01@openssh.com,rsa-sha2-512,rsa-sha2-256'
+sshd_jail_ciphers: ''
+sshd_jail_kex_algorithms: ''
+sshd_jail_macs: ''
+sshd_jail_host_key_algorithms: ''
+sshd_jail_pubkey_accepted_algorithms: ''
+
+# Lignes brutes insérées avant le Subsystem (pas de bloc Match ici).
+sshd_jail_extra_config: ''
+
+# Logging (VERBOSE : empreinte de clé, utile sur un daemon SFTP dédié)
 sshd_jail_log_level: 'VERBOSE'
 
 # -----------------------------------------------------------------------------

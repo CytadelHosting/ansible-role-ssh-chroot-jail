@@ -17,7 +17,7 @@ Rôle Ansible pour gérer des comptes SSH/SFTP jailed avec isolation complète p
 
 - Ansible >= 2.9
 - Debian/Ubuntu ou RedHat/CentOS
-- Systemd
+- systemd, ou SysV LSB sur famille Debian (Devuan)
 - Package `acl` installé (pour les permissions sur les bind mounts)
 
 ## Variables principales
@@ -33,6 +33,11 @@ sshd_jail_sftp_umask: '007'
 
 # Chemin racine des jails
 ssh_chroot_jail_path: /jails
+
+# Profil crypto. Défaut : modern (defaults du paquet OpenSSH, comme cytadel.common)
+# compatible : + KEX modp pour les clients sans curve25519 / post-quantique
+# legacy     : + ssh-rsa, hmac-sha1, group14-sha1, aes-cbc
+sshd_jail_crypto_profile: modern
 ```
 
 ### Définition des utilisateurs
@@ -61,6 +66,8 @@ ssh_chroot_jail_users:
       - /usr/bin/composer
 
   # Exemple 3 : SFTP avec exceptions (tunnel MySQL)
+  # sshd_user_options est émis dans un Match User placé AVANT le Match Group :
+  # OpenSSH conserve la première occurrence de chaque mot-clé.
   - name: charlie
     home: /home_local/charlie
     sshd_user_options:
@@ -90,13 +97,34 @@ ssh_chroot_jail_sync_bins: false
 
 ### Service SSHD
 
-Le rôle installe un daemon SSHD autonome, indépendant de `ssh.service` (SSH d'administration) :
-- Service : `/etc/systemd/system/sshd-jail.service`
-- Config : `/etc/ssh/sshd_config_jail` (validée par `sshd -t` avant chaque restart)
-- Commandes : `systemctl restart sshd-jail`
+Daemon autonome, indépendant de `ssh.service` :
 
-L'unité `sshd@.service` fournie par openssh-server est per-connection (`sshd -i`, socket activation)
-et n'est pas utilisée. Une ancienne instance `sshd@jail` est désactivée et arrêtée par le rôle.
+| | systemd | SysV (Debian, `ansible_service_mgr != systemd`) |
+|---|---|---|
+| Définition | `/etc/systemd/system/sshd-jail.service` | `/etc/init.d/sshd-jail` |
+| Modèle | `ssh.service` du paquet Debian (`Type=notify`, `RestartPreventExitStatus=255`) | `/etc/init.d/ssh` (LSB, `start-stop-daemon`, pid file dédié) |
+| Environnement | `/etc/default/sshd-jail` (`SSHD_OPTS`) | idem |
+
+- Config : `/etc/ssh/sshd_config_jail`, validée par `sshd -t` avant écriture, au `ExecStartPre` et au `reload`
+- Pid : `/run/sshd-jail.pid` (ne pas écraser `/run/sshd.pid`)
+- Coupure : créer `/etc/ssh/sshd-jail_not_to_be_run` (même convention que `sshd_not_to_be_run`)
+- `RuntimeDirectory=sshd` n'est pas posé : ce répertoire est partagé avec le SSH d'admin, systemd le retirerait à l'arrêt de la jail
+
+`sshd@.service` du paquet est per-connection (`sshd -i`). Le rôle ne s'en sert pas et arrête une ancienne instance `sshd@jail`.
+
+### Profils crypto
+
+Alignés sur `cytadel.common` : pas de liste figée par défaut, les algorithmes suivent le paquet OpenSSH.
+
+| Profil | Effet |
+|---|---|
+| `modern` (défaut) | aucune directive `Ciphers` / `KexAlgorithms` / `MACs` / `HostKeyAlgorithms` |
+| `compatible` | `modern` + KEX `diffie-hellman-group14-sha256`, group16, group18, group-exchange-sha256 |
+| `legacy` | `compatible` + `ssh-rsa`, `hmac-sha1`, `group14-sha1`, `aes128-cbc`, `aes256-cbc` |
+
+Le préfixe `+` ajoute aux defaults du binaire : sur Debian 13 le post-quantique reste proposé en premier. Une variable `sshd_jail_ciphers` (ou kex, macs, host key, pubkey) non vide remplace la ligne du profil.
+
+`legacy` fait échouer `sshd -t` si l'OpenSSH de la machine a retiré l'algorithme à la compilation. Ne l'activer que pour un client qui ne négocie rien d'autre.
 
 ### Structure d'une jail
 

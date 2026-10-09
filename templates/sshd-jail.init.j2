@@ -1,0 +1,148 @@
+#!/bin/sh
+# {{ ansible_managed }}
+# Calqué sur /etc/init.d/ssh du paquet Debian openssh-server.
+# Différence assumée : Default-Stop 0 1 6. Le script du SSH d'admin laisse
+# Default-Stop vide pour ne pas couper les sessions pendant le halt.
+# Ce daemon SFTP n'a pas besoin de survivre au shutdown.
+#
+# log_end_msg 0 affiche [ ok ] en vert via /lib/lsb/init-functions.
+
+### BEGIN INIT INFO
+# Provides:          {{ sshd_jail_daemon }}
+# Required-Start:    $remote_fs $syslog
+# Required-Stop:     $remote_fs $syslog
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: OpenSSH jail/SFTP server
+### END INIT INFO
+
+set -e
+
+DAEMON=/usr/sbin/sshd
+NAME="{{ sshd_jail_daemon }}"
+CONFIG="{{ sshd_jail_config_path }}"
+PIDFILE="{{ sshd_jail_pid_file }}"
+DISABLE_FLAG="{{ sshd_jail_disable_flag }}"
+DEFAULTS="{{ sshd_jail_default_path }}"
+
+test -x "$DAEMON" || exit 0
+("$DAEMON" -\? 2>&1 | grep -q OpenSSH) 2>/dev/null || exit 0
+
+umask 022
+
+# SSHD_OPTS = extras seulement. -f est ajouté par ce script.
+SSHD_OPTS=""
+if [ -f "$DEFAULTS" ]; then
+    . "$DEFAULTS"
+fi
+
+. /lib/lsb/init-functions
+
+if [ -n "$2" ]; then
+    SSHD_OPTS="$SSHD_OPTS $2"
+fi
+
+export PATH="${PATH:+$PATH:}/usr/sbin:/sbin"
+
+run_by_init() {
+    ([ "$previous" ] && [ "$runlevel" ]) || [ "$runlevel" = S ]
+}
+
+check_for_no_start() {
+    if [ -e "$DISABLE_FLAG" ]; then
+        if [ "$1" = log_end_msg ]; then
+            log_end_msg 0 || true
+        fi
+        if ! run_by_init; then
+            log_action_msg "OpenSSH jail server not in use ($DISABLE_FLAG)" || true
+        fi
+        exit 0
+    fi
+}
+
+check_dev_null() {
+    if [ ! -c /dev/null ]; then
+        if [ "$1" = log_end_msg ]; then
+            log_end_msg 1 || true
+        fi
+        if ! run_by_init; then
+            log_action_msg "/dev/null is not a character device!" || true
+        fi
+        exit 1
+    fi
+}
+
+check_privsep_dir() {
+    # Répertoire de séparation de privilèges, partagé avec ssh.service.
+    if [ ! -d /run/sshd ]; then
+        mkdir /run/sshd
+        chmod 0755 /run/sshd
+    fi
+}
+
+check_config() {
+    if [ ! -e "$DISABLE_FLAG" ]; then
+        # shellcheck disable=SC2086
+        "$DAEMON" -f "$CONFIG" $SSHD_OPTS -t || exit 1
+    fi
+}
+
+case "$1" in
+  start)
+    check_privsep_dir
+    check_for_no_start
+    check_dev_null
+    log_daemon_msg "Starting OpenSSH jail/SFTP server" "$NAME" || true
+    # shellcheck disable=SC2086
+    if start-stop-daemon --start --quiet --oknodo --chuid 0:0 --pidfile "$PIDFILE" --exec "$DAEMON" -- -f "$CONFIG" $SSHD_OPTS; then
+        log_end_msg 0 || true
+    else
+        log_end_msg 1 || true
+    fi
+    ;;
+  stop)
+    log_daemon_msg "Stopping OpenSSH jail/SFTP server" "$NAME" || true
+    if start-stop-daemon --stop --quiet --oknodo --pidfile "$PIDFILE" --exec "$DAEMON"; then
+        log_end_msg 0 || true
+    else
+        log_end_msg 1 || true
+    fi
+    ;;
+  reload|force-reload)
+    check_for_no_start log_end_msg
+    check_config
+    log_daemon_msg "Reloading OpenSSH jail/SFTP server" "$NAME" || true
+    if start-stop-daemon --stop --signal 1 --quiet --oknodo --pidfile "$PIDFILE" --exec "$DAEMON"; then
+        log_end_msg 0 || true
+    else
+        log_end_msg 1 || true
+    fi
+    ;;
+  restart)
+    check_privsep_dir
+    check_config
+    log_daemon_msg "Restarting OpenSSH jail/SFTP server" "$NAME" || true
+    start-stop-daemon --stop --quiet --oknodo --retry 30 --pidfile "$PIDFILE" --exec "$DAEMON"
+    check_for_no_start log_end_msg
+    check_dev_null
+    # shellcheck disable=SC2086
+    if start-stop-daemon --start --quiet --oknodo --chuid 0:0 --pidfile "$PIDFILE" --exec "$DAEMON" -- -f "$CONFIG" $SSHD_OPTS; then
+        log_end_msg 0 || true
+    else
+        log_end_msg 1 || true
+    fi
+    ;;
+  try-restart)
+    status_of_proc -p "$PIDFILE" "$DAEMON" "$NAME" >/dev/null 2>&1 || exit 0
+    "$0" restart
+    ;;
+  status)
+    status_of_proc -p "$PIDFILE" "$DAEMON" "$NAME" && exit 0 || exit $?
+    ;;
+  *)
+    log_action_msg "Usage: /etc/init.d/$NAME {start|stop|reload|force-reload|restart|try-restart|status}" || true
+    exit 1
+    ;;
+esac
+
+exit 0

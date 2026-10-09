@@ -1,0 +1,6 @@
+# {{ ansible_managed }}
+# Options supplémentaires de {{ sshd_jail_daemon }}.
+# -f {{ sshd_jail_config_path }} et -D (systemd) sont déjà imposés.
+# Ne pas redéfinir -f ici : le dernier -f gagne, et un mauvais chemin
+# ferait lire la config du SSH d'administration.
+SSHD_OPTS={{ sshd_jail_extra_opts }}

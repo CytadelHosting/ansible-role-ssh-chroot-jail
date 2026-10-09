@@ -102,4 +102,4 @@
     validate: '/usr/sbin/sshd -t -f %s'
   notify:
     - restart sshd jail daemon
-  when: not sshd_jail_port_conflict
+  when: not (sshd_jail_port_conflict | bool)
