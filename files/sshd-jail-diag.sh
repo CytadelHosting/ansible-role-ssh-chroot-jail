@@ -206,6 +206,7 @@ echo "    Fin automatique après ${capture_seconds} s ou 40 paquets. ${GREEN}Ctr
 # --foreground : sans lui, timeout sort tcpdump du groupe de processus du
 # terminal et Ctrl+C n'atteint jamais tcpdump.
 # -Z root : sans ça tcpdump perd ses droits avant d'écrire dans le répertoire temporaire
+capture_start=$(date '+%Y-%m-%d %H:%M:%S')
 trap 'echo; warn "capture interrompue, analyse des paquets reçus"' INT
 timeout --foreground "$capture_seconds" tcpdump -i any -nn -s 0 -U -Z root -c 40 \
     -w "$work_dir/client.pcap" "src host $client_ip and tcp dst port $jail_port" 2>/dev/null || true
@@ -217,8 +218,16 @@ if [[ ! -s "$work_dir/client.pcap" ]]; then
     exit 0
 fi
 
-python3 - "$work_dir/client.pcap" "$work_dir/server.txt" <<'PYTHON'
+# Lignes sshd écrites pendant la capture : le décodeur y cherche l'issue de
+# chaque connexion par son port source (l'auth est chiffrée, invisible au pcap).
+sleep 1
+journalctl --since "$capture_start" --no-pager -o short-iso \
+    _COMM=sshd _COMM=sshd-session _COMM=sshd-auth 2>/dev/null \
+    | grep -E -- "$client_ip_regex" >"$work_dir/capture_log.txt" || true
+
+python3 - "$work_dir/client.pcap" "$work_dir/server.txt" "$work_dir/capture_log.txt" <<'PYTHON'
 """Extrait bannière et KEXINIT du client depuis un pcap, compare à l'offre serveur."""
+import re
 import struct
 import sys
 
@@ -226,6 +235,10 @@ GREEN, RED, YELLOW, RESET = "\033[32m", "\033[31m", "\033[33m", "\033[0m"
 PSEUDO_ALGOS = ("ext-info-c", "kex-strict-c-v00@openssh.com")
 AEAD_CIPHERS = ("chacha20-poly1305@openssh.com", "aes128-gcm@openssh.com", "aes256-gcm@openssh.com")
 NAME_LISTS = ("kex", "hostkey", "cipher_c2s", "cipher_s2c", "mac_c2s", "mac_s2c", "comp_c2s", "comp_s2c")
+FAILURE_REGEX = re.compile(
+    r"Failed |Invalid user|not allowed because|Too many authentication|Unable to negotiate"
+    r"|bad ownership|Timeout before authentication|maximum authentication attempts"
+)
 HOSTKEY_TYPE_PREFIX = {"ED25519": ("ssh-ed25519",), "RSA": ("rsa-sha2-", "ssh-rsa"), "ECDSA": ("ecdsa-sha2-",)}
 
 
@@ -339,8 +352,32 @@ def report(label, client_algos, server_algos):
     return chosen
 
 
+def report_outcome(source_port, log_lines):
+    """Issue de la connexion lue dans le journal : la phase d'auth est chiffrée."""
+    port_regex = re.compile(rf"\bport {source_port}\b")
+    lines = [line for line in log_lines if port_regex.search(line)]
+    failures = [line for line in lines if FAILURE_REGEX.search(line)]
+    accepted = next((line for line in lines if "Accepted " in line), None)
+    if accepted:
+        print(f"{GREEN}[ OK ]{RESET} {'issue':<10} authentifié : {accepted.split(': ', 1)[-1]}")
+        if failures:
+            print(f"       ({len(failures)} essai(s) refusé(s) avant : clés en trop dans l'agent du client)")
+        return
+    if failures:
+        print(f"{RED}[ KO ]{RESET} {'issue':<10} refusé après négociation :")
+    elif lines:
+        print(f"{YELLOW}[WARN]{RESET} {'issue':<10} pas d'authentification réussie (abandon client, timeout ?) :")
+    else:
+        print(f"{YELLOW}[INFO]{RESET} {'issue':<10} aucune ligne sshd pour ce port (connexion encore en cours ?)")
+        return
+    for line in (failures or lines)[-5:]:
+        print(f"       {line}")
+
+
 server = load_server(sys.argv[2])
 streams = read_tcp_streams(sys.argv[1])
+with open(sys.argv[3]) as handle:
+    capture_log = handle.read().splitlines()
 
 for source_port, stream in streams.items():
     print(f"\n--- connexion depuis le port {source_port}")
@@ -369,8 +406,5 @@ for source_port, stream in streams.items():
         report("mac", lists["mac_c2s"], server.get("macs", []))
     if "kex-strict-c-v00@openssh.com" not in lists["kex"]:
         print(f"{YELLOW}[INFO]{RESET} client sans strict-kex (antérieur au correctif Terrapin, fin 2023)")
+    report_outcome(source_port, capture_log)
 PYTHON
-
-echo
-echo "    Négociation OK partout mais échec quand même : regarder la partie Journaux"
-echo "    (pénalités, clé refusée, groupe, chroot). Elle se joue après le chiffrement."

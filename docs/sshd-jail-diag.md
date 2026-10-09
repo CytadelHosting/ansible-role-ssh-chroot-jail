@@ -152,7 +152,12 @@ Formats de capture pris en charge : Ethernet (avec 802.1Q), Linux cooked SLL et 
 | `[ KO ] cipher` sur `*-cbc` | client sans CTR ni GCM | `legacy` |
 | `[ KO ] mac` sur `hmac-sha1` | client sans SHA-2 | `legacy` |
 | `[INFO] … strict-kex` | client ancien, mais la connexion peut marcher | aucune, information seulement |
-| tout `[ OK ]` | la négociation passe | l'échec vient après le chiffrement : lire l'étape 3 |
+| `[ OK ] issue … authentifié` | connexion réussie (ligne `Accepted` du journal pour ce port source) | si le client se plaint encore : lire « Sessions authentifiées » (chroot, sftp) |
+| `[ KO ] issue … refusé après négociation` | la négociation passe, l'auth échoue | la ligne affichée donne la cause : clé, groupe, droits du chroot |
+| `[WARN] issue … pas d'authentification réussie` | le client ferme après la négociation, sans échec loggé | abandon, mauvais login, timeout côté client |
+| `[INFO] issue … aucune ligne sshd` | journal pas encore écrit, ou connexion toujours en cours | relancer, ou lire l'étape 3 |
+
+L'issue est lue dans le journal écrit pendant la capture, par le port source de la connexion : l'authentification est chiffrée, invisible dans le pcap.
 
 Le profil `legacy` ajoute ces algorithmes pour tous les clients du daemon. Si un seul client est concerné, mieux vaut une surcharge ciblée, par exemple `sshd_jail_kex_algorithms: '+diffie-hellman-group14-sha1'`. Encore mieux : mettre à jour le client.
 
