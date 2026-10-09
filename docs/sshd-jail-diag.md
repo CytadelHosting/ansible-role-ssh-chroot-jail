@@ -45,6 +45,8 @@ SINCE="7 days ago" sshd-jail-diag 203.0.113.10 300
 JAIL_CONFIG=/etc/ssh/sshd_config_sftp sshd-jail-diag 203.0.113.10
 ```
 
+**Arrêt** : la capture se termine seule au bout de `durée_capture_s` ou après 40 paquets. **Ctrl+C pendant la capture** l'arrête et lance l'analyse des paquets déjà reçus. Ctrl+C à une autre étape quitte le script. Le répertoire temporaire est supprimé dans tous les cas.
+
 Le client ne connaît pas son IP publique ? Demande-lui d'ouvrir <https://ifconfig.me>. À défaut, lance `ss -tn 'sport = :22'` pendant qu'il tente de se connecter.
 
 ### Sur un serveur où le rôle n'est pas encore déployé
@@ -89,7 +91,9 @@ Le script affiche ensuite les 25 dernières lignes et les classe :
 
 | Motif dans le journal | Signification | Correctif |
 |---|---|---|
-| `penalty`, `drop connection` | PerSourcePenalties : l'IP est bloquée de 15 à 600 s | `sshd_jail_per_source_penalty_exempt_list` ou `sshd_jail_per_source_penalties: 'no'` |
+| `drop connection`, `active penalty` | PerSourcePenalties : l'IP est bloquée de 15 à 600 s | `sshd_jail_per_source_penalty_exempt_list` ou `sshd_jail_per_source_penalties: 'no'` |
+| `deferred penalty` (WARN) | pénalité cumulée, sans blocage tant que le total reste sous `min:` (15 s par défaut) | rien, sauf si un `drop connection` suit |
+| `Failed publickey` | la clé proposée n'est pas dans `authorized_keys` ; l'empreinte `SHA256:…` est dans la ligne | `ssh-keygen -lf ~user/.ssh/authorized_keys` et comparer |
 | `Unable to negotiate`, `no matching` | aucun algorithme commun | `sshd_jail_crypto_profile: compatible`, puis `legacy` |
 | `ssh-rsa not in`, `key type ssh-rsa` | le client signe en SHA-1 | `legacy`, ou une clé ed25519 côté client |
 | `Invalid key length`, `refusing RSA key` | clé RSA plus courte que `RequiredRSASize` (1024) | nouvelle clé côté client |
@@ -99,7 +103,7 @@ Le script affiche ensuite les 25 dernières lignes et les classe :
 | `bad ownership or modes` | droits incorrects (StrictModes ou chroot) | chaîne du chroot en `root:root 0755` |
 | `kex_exchange_identification`, `banner exchange` | le client coupe à la bannière | mettre à jour le client |
 | `Connection closed/reset … [preauth]` | le client coupe pendant la négociation | lire l'étape 4 |
-| `Accepted` | l'authentification a réussi | le problème vient après : chroot, shell, sftp |
+| `Accepted` (OK) | l'authentification a réussi | si le client échoue quand même, lire « Sessions authentifiées » : toutes les lignes du PID `sshd-session`, y compris PAM et chroot, qui ne portent pas l'IP |
 
 Les pénalités se cumulent. Un client derrière un NAT d'entreprise suffit : un collègue qui se trompe de mot de passe, ou une supervision qui ouvre le port sans s'authentifier, et toute l'IP est bloquée.
 
@@ -138,6 +142,8 @@ Formats de capture pris en charge : Ethernet (avec 802.1Q), Linux cooked SLL et 
 | Sortie | Conclusion | Action |
 |---|---|---|
 | `aucun paquet de <ip>` | rien n'arrive au serveur | mauvaise IP (NAT, IPv6), pare-feu en amont, ban fail2ban |
+| `session déjà ouverte avant la capture` | aucun SYN vu : une session en cours, chiffrée | aucune, connexion ignorée |
+| `TCP ouvert mais aucune donnée` | le client ouvre TCP puis abandonne | proxy, scanner, client qui attend autre chose |
 | `paquets reçus mais sans données` | TCP s'ouvre, le client n'envoie rien | ce n'est pas un client SSH, ou un proxy est entre les deux |
 | `pas de bannière SSH` | des données, mais pas du SSH | proxy HTTP, mauvais protocole configuré chez le client |
 | `bannière reçue, pas de KEXINIT` | le client coupe après avoir lu la bannière du serveur | client qui interprète mal `OpenSSH_10.0` : le mettre à jour |

@@ -60,8 +60,10 @@ if ! effective_config=$(sshd -T -f "$JAIL_CONFIG" 2>&1); then
     exit 1
 fi
 
+# sshd -T sort une ligne par élément pour les options multiples (allowgroups,
+# hostkey, ...) : on les recolle toutes.
 config_value() {
-    awk -v key="$1" '$1 == key { $1 = ""; sub(/^ /, ""); print; exit }' <<<"$effective_config"
+    awk -v key="$1" '$1 == key { $1 = ""; sub(/^ /, ""); out = out (out == "" ? "" : " ") $0 } END { print out }' <<<"$effective_config"
 }
 
 jail_port=$(config_value port)
@@ -131,34 +133,58 @@ if [[ -z "$log_lines" ]]; then
 else
     printf '%s\n' "$log_lines" | tail -n 25 | sed 's/^/    /'
 
-    # motif | diagnostic | correctif côté rôle
+    # gravité | motif (regex, peut contenir des |) | diagnostic | correctif
+    # Pénalité "deferred" : simple cumul, l'IP n'est bloquée qu'au-delà de min:
+    # de persourcepenalties ("active penalty" / "drop connection").
     diagnostics=(
-        'penalty|drop connection|PerSourcePenalties : IP bloquée temporairement (NAT partagé, clés multiples, grace dépassée)|sshd_jail_per_source_penalty_exempt_list ou sshd_jail_per_source_penalties'
-        'Unable to negotiate|no matching|aucun algorithme commun|sshd_jail_crypto_profile: compatible puis legacy'
-        'ssh-rsa not in|key type ssh-rsa|signature SHA-1 (ssh-rsa) refusée|sshd_jail_crypto_profile: legacy ou clé ed25519 côté client'
-        'Invalid key length|refusing RSA key|clé RSA trop courte (< RequiredRSASize)|nouvelle clé côté client'
-        'Too many authentication failures|maximum authentication attempts|MaxAuthTries 3 atteint (agent avec plusieurs clés)|IdentitiesOnly côté client ou sshd_jail_max_auth_tries'
-        'Timeout before authentication|LoginGraceTime dépassé|sshd_jail_login_grace_time'
-        'not allowed because|AllowGroups / DenyUsers refuse le compte|sshd_jail_allow_groups_extra ou groupe jail'
-        'bad ownership or modes|StrictModes / ChrootDirectory : droits incorrects|chown root, chmod 755 sur la chaîne de chroot'
-        'kex_exchange_identification|banner exchange|le client coupe à la bannière (ex : parseur de version qui lit OpenSSH_10 comme 1.x)|mise à jour du client'
-        'Connection (closed|reset) by .*preauth|le client coupe en négociation : voir la capture ci-dessous|-'
-        'Accepted |authentification OK : le problème est après (chroot, shell, sftp)|journal complet de la session'
+        'ko|drop connection|active penalty|PerSourcePenalties : IP bloquée, connexions refusées sans log côté client|sshd_jail_per_source_penalty_exempt_list ou sshd_jail_per_source_penalties'
+        'info|deferred penalty|PerSourcePenalties : pénalité cumulée, pas de blocage tant que le total reste sous min:|rien, sauf si suivi de drop connection'
+        'ko|Unable to negotiate|no matching|aucun algorithme commun|sshd_jail_crypto_profile: compatible puis legacy'
+        'ko|ssh-rsa not in|key type ssh-rsa|signature SHA-1 (ssh-rsa) refusée|sshd_jail_crypto_profile: legacy ou clé ed25519 côté client'
+        'ko|Invalid key length|refusing RSA key|clé RSA trop courte (< RequiredRSASize)|nouvelle clé côté client'
+        'ko|Failed publickey|clé proposée absente de authorized_keys (empreinte dans la ligne)|comparer avec ssh-keygen -lf sur authorized_keys'
+        'ko|Failed password|mot de passe refusé|-'
+        'ko|Too many authentication failures|maximum authentication attempts|MaxAuthTries 3 atteint (agent avec plusieurs clés)|IdentitiesOnly côté client ou sshd_jail_max_auth_tries'
+        'ko|Timeout before authentication|LoginGraceTime dépassé|sshd_jail_login_grace_time'
+        'ko|not allowed because|AllowGroups / DenyUsers refuse le compte|sshd_jail_allow_groups_extra ou groupe jail'
+        'ko|bad ownership or modes|StrictModes / ChrootDirectory : droits incorrects|chown root, chmod 755 sur la chaîne de chroot'
+        'ko|kex_exchange_identification|banner exchange|le client coupe à la bannière (ex : parseur de version qui lit OpenSSH_10 comme 1.x)|mise à jour du client'
+        'info|Connection (closed|reset) by .*preauth|le client coupe en négociation : voir la capture ci-dessous|-'
+        'ok|Accepted |authentification réussie|si le client échoue quand même : voir les sessions ci-dessous'
     )
     title "Lecture"
     found_pattern=false
     for entry in "${diagnostics[@]}"; do
         IFS='|' read -r -a parts <<<"$entry"
-        pattern_count=$(( ${#parts[@]} - 2 ))
-        pattern=$(IFS='|'; echo "${parts[*]:0:$pattern_count}")
+        last=$(( ${#parts[@]} - 1 ))
+        pattern=$(IFS='|'; echo "${parts[*]:1:$(( last - 2 ))}")
         hits=$(grep -cE -- "$pattern" <<<"$log_lines" || true)
         if (( hits > 0 )); then
             found_pattern=true
-            ko "${hits}x ${parts[$pattern_count]}"
-            echo "    -> ${parts[$((pattern_count + 1))]}"
+            case "${parts[0]}" in
+                ok)   ok   "${hits}x ${parts[$(( last - 1 ))]}" ;;
+                info) warn "${hits}x ${parts[$(( last - 1 ))]}" ;;
+                *)    ko   "${hits}x ${parts[$(( last - 1 ))]}" ;;
+            esac
+            echo "    -> ${parts[$last]}"
         fi
     done
     [[ "$found_pattern" == true ]] || ok "aucun motif connu"
+
+    # Après l'authentification, plusieurs lignes ne portent plus l'IP (PAM,
+    # Starting session, chroot). On les retrouve par le PID de sshd-session.
+    session_pids=$(grep -E 'Accepted ' <<<"$log_lines" | grep -oE 'sshd-session\[[0-9]+\]' | grep -oE '[0-9]+' | sort -u || true)
+    if [[ -n "$session_pids" ]]; then
+        title "Sessions authentifiées (toutes les lignes de chaque PID)"
+        for session_pid in $session_pids; do
+            echo "    --- sshd-session[$session_pid]"
+            journalctl --since "$SINCE" --no-pager -o short-iso "_PID=$session_pid" 2>/dev/null \
+                | tail -n 20 | sed 's/^/    /' || true
+            if ps -p "$session_pid" >/dev/null 2>&1; then
+                ok "session toujours ouverte"
+            fi
+        done
+    fi
 fi
 
 # -----------------------------------------------------------------------------
@@ -175,9 +201,15 @@ if ! command -v python3 >/dev/null 2>&1; then
 fi
 
 echo "    ${BOLD}Fais tenter une connexion au client maintenant.${RESET}"
+echo "    Fin automatique après ${capture_seconds} s ou 40 paquets. ${GREEN}Ctrl+C${RESET} : arrêter la capture et analyser."
+# Ctrl+C pendant la capture = fin de capture, pas fin du script.
+# --foreground : sans lui, timeout sort tcpdump du groupe de processus du
+# terminal et Ctrl+C n'atteint jamais tcpdump.
 # -Z root : sans ça tcpdump perd ses droits avant d'écrire dans le répertoire temporaire
-timeout "$capture_seconds" tcpdump -i any -nn -s 0 -U -Z root -c 40 \
+trap 'echo; warn "capture interrompue, analyse des paquets reçus"' INT
+timeout --foreground "$capture_seconds" tcpdump -i any -nn -s 0 -U -Z root -c 40 \
     -w "$work_dir/client.pcap" "src host $client_ip and tcp dst port $jail_port" 2>/dev/null || true
+trap - INT
 
 if [[ ! -s "$work_dir/client.pcap" ]]; then
     ko "aucun paquet de $client_ip vers le port $jail_port"
@@ -250,8 +282,11 @@ def read_tcp_streams(path):
         source_port = struct.unpack(">H", packet[l4:l4 + 2])[0]
         sequence = struct.unpack(">I", packet[l4 + 4:l4 + 8])[0]
         payload = packet[l4 + (packet[l4 + 12] >> 4) * 4:]
+        stream = streams.setdefault(source_port, {"syn": False, "segments": {}})
+        if packet[l4 + 13] & 0x02:  # SYN : connexion ouverte pendant la capture
+            stream["syn"] = True
         if payload:
-            streams.setdefault(source_port, {}).setdefault(sequence, payload)
+            stream["segments"].setdefault(sequence, payload)
     return streams
 
 
@@ -306,13 +341,17 @@ def report(label, client_algos, server_algos):
 
 server = load_server(sys.argv[2])
 streams = read_tcp_streams(sys.argv[1])
-if not streams:
-    print(f"{RED}[ KO ]{RESET} paquets reçus mais sans données : le client ouvre TCP puis abandonne avant sa bannière")
-    sys.exit(0)
 
-for source_port, segments in streams.items():
-    banner, lists = parse_client(reassemble(segments))
+for source_port, stream in streams.items():
     print(f"\n--- connexion depuis le port {source_port}")
+    if not stream["syn"]:
+        # Pas de SYN : la session a commencé avant la capture, on ne voit que du chiffré
+        print(f"{YELLOW}[INFO]{RESET} session déjà ouverte avant la capture (flux chiffré) : ignorée")
+        continue
+    if not stream["segments"]:
+        print(f"{RED}[ KO ]{RESET} TCP ouvert mais aucune donnée : le client abandonne avant sa bannière")
+        continue
+    banner, lists = parse_client(reassemble(stream["segments"]))
     if banner is None:
         print(f"{RED}[ KO ]{RESET} pas de bannière SSH : ce n'est pas un client SSH, ou il parle à travers un proxy")
         continue
