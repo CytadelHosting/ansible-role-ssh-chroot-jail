@@ -62,31 +62,6 @@
   register: user_created
 
 # -----------------------------------------------------------------------------
-# Récupération des infos utilisateur (uid/gid)
-# -----------------------------------------------------------------------------
-- name: "{{ jail_user.name }} | Get user info"
-  getent:
-    database: passwd
-    key: "{{ jail_user.name }}"
-
-- name: "{{ jail_user.name }} | Store user info"
-  set_fact:
-    jail_user_info:
-      uid: "{{ getent_passwd[jail_user.name][1] }}"
-      group: "{{ getent_passwd[jail_user.name][2] }}"
-
-- name: "{{ jail_user.name }} | Get group name"
-  getent:
-    database: group
-    key: "{{ jail_user_info.group }}"
-  register: group_info_result
-  failed_when: false
-
-- name: "{{ jail_user.name }} | Store group name"
-  set_fact:
-    _user_group_name: "{{ jail_user.group | default(jail_user.name) }}"
-
-# -----------------------------------------------------------------------------
 # Gestion des clés SSH autorisées (dans le home RÉEL, pas la jail)
 # -----------------------------------------------------------------------------
 - name: "{{ jail_user.name }} | Add authorized SSH public keys"

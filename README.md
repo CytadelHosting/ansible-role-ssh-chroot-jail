@@ -185,6 +185,19 @@ Résultat :
 - L'utilisateur `www-data` apparaît dans `/jails/user/etc/passwd`
 - L'utilisateur jailed peut écrire dans `/var/www/monsite` via les ACL
 
+### `/etc/passwd` et `/etc/group` de la jail
+
+Les lignes sont recopiées depuis l'OS (`getent`), jamais recomposées : un UID/GID garde toujours son vrai nom. Le champ mot de passe est forcé à `x`. La liste des membres des groupes est vidée, sinon `sshjail` révélerait tous les comptes jailés.
+
+| Contenu | Source |
+|---|---|
+| `root`, l'utilisateur | toujours |
+| tous les groupes de l'utilisateur | `id -G` (primaire et secondaires) |
+| owner et groupe de chaque `src_dir` | `stat` des bind mounts |
+| comptes et groupes supplémentaires | `ssh_chroot_jail_visible_users` / `_groups`, et `visible_users` / `visible_groups` par utilisateur |
+
+Une clé inconnue de l'OS est ignorée. Les lectures tournent aussi en `--check` : le diff simulé correspond à ce qu'écrirait un vrai run.
+
 ## Suppression d'un utilisateur
 
 Quand `state: absent` :

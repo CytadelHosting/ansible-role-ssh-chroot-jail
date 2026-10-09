@@ -1,7 +1,10 @@
 {{ ansible_managed | comment }}
 # =============================================================================
-# SSHD jail — {{ sshd_jail_daemon }}
-# Port {{ sshd_jail_port }} — profil crypto {{ sshd_jail_crypto_profile }}
+# Configuration SSHD pour comptes jailed (SSH/SFTP)
+# =============================================================================
+# Service : {{ sshd_jail_daemon }}
+# Port    : {{ sshd_jail_port }}
+# Crypto  : profil {{ sshd_jail_crypto_profile }}
 # Fichier autonome : ne pas Include les drop-ins de ssh.service.
 # =============================================================================
 {% set _profile = sshd_jail_crypto_profiles[sshd_jail_crypto_profile] %}
@@ -12,15 +15,19 @@
 {% set _hostkeys = ((sshd_jail_host_key_algorithms | default('') | trim) or (_profile.host_key_algorithms | default('') | trim)) | replace(' ', '') | replace('\n', '') %}
 {% set _pubkeys = ((sshd_jail_pubkey_accepted_algorithms | default('') | trim) or (_profile.pubkey_accepted_algorithms | default('') | trim)) | replace(' ', '') | replace('\n', '') %}
 
-# --- réseau ---
+# ===========================
+# === BASIC SETTINGS      ===
+# ===========================
 Port {{ sshd_jail_port }}
 PidFile {{ sshd_jail_pid_file }}
 
-# --- authentification ---
+
+### AUTHENTIFICATION 
 StrictModes {{ sshd_jail_strict_modes }}
 PermitRootLogin {{ sshd_jail_permit_root_login }}
 PubkeyAuthentication {{ sshd_jail_pubkey_authentication }}
 PasswordAuthentication {{ sshd_jail_password_authentication }}
+# ChallengeResponseAuthentication est déprécié depuis OpenSSH 8.7
 {% if ansible_facts.os_family == 'RedHat' and ansible_facts.distribution_major_version | int >= 9 %}
 KbdInteractiveAuthentication {{ sshd_jail_kbd_interactive_authentication | default(sshd_jail_challenge_response_authentication) }}
 {% elif ansible_facts.os_family == 'Debian' and ansible_facts.distribution_major_version | int >= 12 %}
@@ -29,20 +36,23 @@ KbdInteractiveAuthentication {{ sshd_jail_kbd_interactive_authentication | defau
 ChallengeResponseAuthentication {{ sshd_jail_challenge_response_authentication }}
 {% endif %}
 UsePAM {{ sshd_jail_use_pam }}
+
+
+### LOGGING
 LogLevel {{ sshd_jail_log_level }}
 
-# --- forwarding (jail : tout fermé, y compris dans les Match Group) ---
+
+### FORWARDING
+# Tout fermé ici et dans les Match Group ; exceptions via Match User.
 AllowAgentForwarding {{ sshd_jail_allow_agent_forwarding }}
 AllowTcpForwarding {{ sshd_jail_allow_tcp_forwarding }}
 AllowStreamLocalForwarding {{ sshd_jail_allow_stream_local_forwarding }}
 X11Forwarding {{ sshd_jail_x11_forwarding }}
 PermitTunnel {{ sshd_jail_permit_tunnel }}
-{% if ansible_facts.os_family == 'Debian' %}
-DebianBanner no
-{% endif %}
-Banner none
 
-# --- crypto : ligne absente = defaults du paquet OpenSSH ---
+
+### ALGORITHMES CRYPTOGRAPHIQUE
+# Directive absente = defaults du paquet OpenSSH (profil modern).
 {% if _ciphers | length > 0 %}
 Ciphers {{ _ciphers }}
 {% endif %}
@@ -59,7 +69,12 @@ HostKeyAlgorithms {{ _hostkeys }}
 {{ sshd_jail_pubkey_accepted_keyword }} {{ _pubkeys }}
 {% endif %}
 
-# --- session ---
+
+### SESSION / LIMITES
+Banner none
+{% if ansible_facts.os_family == 'Debian' %}
+DebianBanner no
+{% endif %}
 PrintMotd {{ sshd_jail_print_motd }}
 UseDNS {{ sshd_jail_use_dns }}
 ClientAliveInterval {{ sshd_jail_client_alive_interval }}
@@ -70,7 +85,9 @@ MaxStartups {{ sshd_jail_max_startups }}
 AcceptEnv LANG LC_*
 {% if (sshd_jail_openssh_version | default('0')) is version('9.8', '>=') %}
 
-# --- pénalités par source (OpenSSH >= 9.8) ---
+
+### PÉNALITÉS PAR IP
+# OpenSSH >= 9.8 : actif par défaut, voir docs/sshd-jail-diag.md
 {% if sshd_jail_per_source_penalties | default('') | trim | length > 0 %}
 PerSourcePenalties {{ sshd_jail_per_source_penalties | trim }}
 {% endif %}
@@ -80,15 +97,30 @@ PerSourcePenaltyExemptList {{ sshd_jail_per_source_penalty_exempt_list | join(',
 {% endif %}
 {% if sshd_jail_extra_config | default('') | trim | length > 0 %}
 
+
+### OPTIONS EXTRA
+# Directives non posées plus haut uniquement : sshd garde la première occurrence.
 {{ sshd_jail_extra_config | trim }}
 {% endif %}
 
+
+# ===========================
+# === SFTP SUBSYSTEM      ===
+# ===========================
 # internal-sftp : pas de binaire sftp-server à copier dans la jail.
-# -u {{ sshd_jail_sftp_umask }} = umask des fichiers créés par SFTP.
+# Umask {{ sshd_jail_sftp_umask }} => permissions par défaut des fichiers/dossiers créés via SFTP
 Subsystem sftp internal-sftp -u {{ sshd_jail_sftp_umask }}
 
+
+# ===========================
+# === GROUPES AUTORISÉS   ===
+# ===========================
 AllowGroups {{ ([ssh_chroot_jail_group_name, sftp_chroot_jail_group_name] + sshd_jail_allow_groups_extra | default([])) | unique | join(' ') }}
 
+
+# ===========================
+# === OPTIONS PAR USER    ===
+# ===========================
 # OpenSSH garde la PREMIÈRE occurrence d'un mot-clé parmi les Match qui
 # s'appliquent. Les exceptions utilisateur sont donc AVANT les Match Group,
 # sinon AllowTcpForwarding no du groupe masque l'exception.
@@ -104,7 +136,12 @@ Match User {{ user.name }}
 {% endif %}
 {% endfor %}
 
-# sshjail : shell dans la jail. sftpjail : SFTP seul.
+
+# ===========================
+# === CHROOT PAR GROUPE   ===
+# ===========================
+
+# Groupe {{ ssh_chroot_jail_group_name }} : shell interactif dans la jail
 Match Group {{ ssh_chroot_jail_group_name }}
     ChrootDirectory {{ ssh_chroot_jail_path }}/%u
     X11Forwarding no
@@ -112,7 +149,9 @@ Match Group {{ ssh_chroot_jail_group_name }}
     AllowStreamLocalForwarding no
     AllowAgentForwarding no
     PermitTunnel no
+    # Pas de ForceCommand -> shell interactif disponible
 
+# Groupe {{ sftp_chroot_jail_group_name }} : SFTP uniquement
 Match Group {{ sftp_chroot_jail_group_name }}
     ChrootDirectory {{ ssh_chroot_jail_path }}/%u
     ForceCommand internal-sftp
@@ -121,4 +160,3 @@ Match Group {{ sftp_chroot_jail_group_name }}
     AllowStreamLocalForwarding no
     AllowAgentForwarding no
     PermitTunnel no
-

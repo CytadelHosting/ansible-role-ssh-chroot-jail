@@ -26,6 +26,13 @@ sftp_chroot_jail_group_name: 'sftpjail'
 # GID optionnel pour le groupe sftpjail
 # sftp_chroot_jail_group_gid: 2001
 
+# Comptes et groupes système recopiés dans /etc/passwd et /etc/group de
+# chaque jail, en plus de root, de l'utilisateur, de ses groupes et des owners
+# des bind mounts. Nom ou ID. Sert à ce que ls -l affiche des noms.
+# Par utilisateur : visible_users / visible_groups dans ssh_chroot_jail_users.
+ssh_chroot_jail_visible_users: []
+ssh_chroot_jail_visible_groups: []
+
 # -----------------------------------------------------------------------------
 # Configuration du service SSHD jail
 # -----------------------------------------------------------------------------
@@ -146,6 +153,8 @@ sshd_jail_host_key_algorithms: ''
 sshd_jail_pubkey_accepted_algorithms: ''
 
 # Lignes brutes insérées avant le Subsystem (pas de bloc Match ici).
+# Seulement pour des directives que le template ne pose pas déjà :
+# sshd garde la première occurrence, un doublon ici serait ignoré.
 sshd_jail_extra_config: ''
 
 # Logging (VERBOSE : empreinte de clé, utile sur un daemon SFTP dédié)
@@ -167,6 +176,8 @@ sshd_jail_log_level: 'VERBOSE'
 #         - src_dir: '/var/www/alice'
 #           mount_point: '/home_local/alice/www'
 #           rw: yes
+#       visible_users: ['www-data']        # comptes OS recopiés dans etc/passwd de la jail
+#       visible_groups: ['www-data']       # groupes OS recopiés dans etc/group de la jail
 #       state: present                     # present ou absent
 #       # Options SSHD spécifiques à l'utilisateur (génère un bloc Match User)
 #       # Format : liste de lignes brutes injectées directement dans la config
